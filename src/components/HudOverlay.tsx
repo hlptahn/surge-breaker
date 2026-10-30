@@ -23,8 +23,10 @@ interface HudOverlayProps {
   hud: HudSnapshot;
   muted: boolean;
   crtEnabled: boolean;
+  reduceFlash: boolean;
   onToggleMute: () => void;
   onToggleCrt: () => void;
+  onToggleReduceFlash: () => void;
   onPause: () => void;
 }
 
@@ -32,8 +34,10 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
   hud,
   muted,
   crtEnabled,
+  reduceFlash,
   onToggleMute,
   onToggleCrt,
+  onToggleReduceFlash,
   onPause,
 }) => {
   const worldMeta = WORLDS[hud.world];
@@ -76,16 +80,16 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
 
           {/* Fuse Lives Pips + Amp Rating Badge */}
           <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-slate-800">
-            <div className="flex items-center gap-1.5" aria-label={`Lives remaining: ${hud.lives}`}>
+            <div className="flex items-center gap-1" aria-label={`Lives remaining: ${hud.lives}`}>
               <span className="text-[10px] font-mono-tabular font-bold text-slate-400 mr-1">
                 FUSES
               </span>
-              {Array.from({ length: Math.max(3, Math.min(5, hud.lives)) }).map((_, idx) => {
+              {Array.from({ length: Math.max(3, Math.min(6, hud.lives)) }).map((_, idx) => {
                 const active = idx < hud.lives;
                 return (
                   <svg
                     key={idx}
-                    width="22"
+                    width="20"
                     height="12"
                     viewBox="0 0 22 12"
                     className={active ? 'opacity-100' : 'opacity-25'}
@@ -100,11 +104,6 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
                   </svg>
                 );
               })}
-              {hud.lives > 5 && (
-                <span className="text-xs font-mono-tabular font-bold text-[#ff6b00]">
-                  +{hud.lives - 5}
-                </span>
-              )}
             </div>
 
             <div className="text-[11px] font-mono-tabular font-bold text-[#00e5ff]">
@@ -188,7 +187,7 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
 
         {/* Top-Right Cluster: Compact Utility Controls */}
         <div className="col-span-12 sm:col-span-3 flex sm:flex-col items-end justify-end gap-1.5 pointer-events-auto">
-          <div className="flex items-center gap-1.5">
+          <div className="flex flex-wrap items-center justify-end gap-1.5">
             <button
               type="button"
               tabIndex={-1}
@@ -197,7 +196,7 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
                 onToggleMute();
               }}
               aria-label={muted ? 'Unmute Audio [M]' : 'Mute Audio [M]'}
-              className="px-2.5 py-1.5 bg-[#0b111e]/92 border-2 border-slate-700 hover:border-[#ff6b00] text-[11px] font-mono-tabular font-bold text-slate-200 cursor-pointer whitespace-nowrap"
+              className="px-2 py-1.5 bg-[#0b111e]/92 border-2 border-slate-700 hover:border-[#ff6b00] text-[10px] font-mono-tabular font-bold text-slate-200 cursor-pointer whitespace-nowrap"
             >
               {muted ? 'MUTE: ON [M]' : 'SOUND [M]'}
             </button>
@@ -210,9 +209,22 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
                 onToggleCrt();
               }}
               aria-label={crtEnabled ? 'Disable CRT [C]' : 'Enable CRT [C]'}
-              className="px-2.5 py-1.5 bg-[#0b111e]/92 border-2 border-slate-700 hover:border-[#00e5ff] text-[11px] font-mono-tabular font-bold text-slate-200 cursor-pointer whitespace-nowrap"
+              className="px-2 py-1.5 bg-[#0b111e]/92 border-2 border-slate-700 hover:border-[#00e5ff] text-[10px] font-mono-tabular font-bold text-slate-200 cursor-pointer whitespace-nowrap"
             >
               {crtEnabled ? 'CRT [C]' : 'NO CRT [C]'}
+            </button>
+
+            <button
+              type="button"
+              tabIndex={-1}
+              onClick={(e) => {
+                e.currentTarget.blur();
+                onToggleReduceFlash();
+              }}
+              aria-label={reduceFlash ? 'Disable Reduce Flash [F]' : 'Enable Reduce Flash [F]'}
+              className="px-2 py-1.5 bg-[#0b111e]/92 border-2 border-slate-700 hover:border-[#ffb703] text-[10px] font-mono-tabular font-bold text-slate-200 cursor-pointer whitespace-nowrap"
+            >
+              {reduceFlash ? 'REDUCE FLASH: ON [F]' : 'REDUCE FLASH [F]'}
             </button>
 
             <button
@@ -223,7 +235,7 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
                 onPause();
               }}
               aria-label="Pause Game [P]"
-              className="px-2.5 py-1.5 bg-[#0b111e]/92 border-2 border-[#ff6b00] hover:bg-[#ff6b00] hover:text-[#090d16] text-[11px] font-mono-tabular font-bold text-[#ff6b00] transition-colors cursor-pointer whitespace-nowrap"
+              className="px-2 py-1.5 bg-[#0b111e]/92 border-2 border-[#ff6b00] hover:bg-[#ff6b00] hover:text-[#090d16] text-[10px] font-mono-tabular font-bold text-[#ff6b00] transition-colors cursor-pointer whitespace-nowrap"
             >
               PAUSE [P]
             </button>

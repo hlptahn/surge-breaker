@@ -4,18 +4,22 @@ interface TitleScreenProps {
   highScore: number;
   muted: boolean;
   crtEnabled: boolean;
+  reduceFlash: boolean;
   onStartGame: () => void;
   onToggleMute: () => void;
   onToggleCrt: () => void;
+  onToggleReduceFlash: () => void;
 }
 
 export const TitleScreen: React.FC<TitleScreenProps> = ({
   highScore,
   muted,
   crtEnabled,
+  reduceFlash,
   onStartGame,
   onToggleMute,
   onToggleCrt,
+  onToggleReduceFlash,
 }) => {
   return (
     <div
@@ -56,8 +60,8 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
         </div>
 
         {/* Top-right High Score & Quick Toggles */}
-        <div className="pointer-events-auto flex items-center gap-3">
-          <div className="hidden sm:flex flex-col items-end mr-3">
+        <div className="pointer-events-auto flex flex-wrap items-center justify-end gap-2 md:gap-3">
+          <div className="hidden sm:flex flex-col items-end mr-2">
             <span className="text-[10px] font-mono-tabular uppercase tracking-widest text-slate-400">
               HIGH SCORE
             </span>
@@ -90,6 +94,19 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
             className="px-3 py-2 bg-[#0f172a] border-2 border-slate-700 hover:border-[#00e5ff] text-xs font-mono-tabular font-bold text-slate-200 transition-colors cursor-pointer whitespace-nowrap"
           >
             {crtEnabled ? 'CRT: ON [C]' : 'CRT: OFF [C]'}
+          </button>
+
+          <button
+            type="button"
+            tabIndex={-1}
+            onClick={(e) => {
+              e.currentTarget.blur();
+              onToggleReduceFlash();
+            }}
+            aria-label={reduceFlash ? 'Disable Reduce Flash [F]' : 'Enable Reduce Flash [F]'}
+            className="px-3 py-2 bg-[#0f172a] border-2 border-slate-700 hover:border-[#ffb703] text-xs font-mono-tabular font-bold text-slate-200 transition-colors cursor-pointer whitespace-nowrap"
+          >
+            {reduceFlash ? 'REDUCE FLASH: ON [F]' : 'REDUCE FLASH: OFF [F]'}
           </button>
         </div>
       </div>
@@ -212,7 +229,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
       {/* Bottom Flat Control Hint Line */}
       <div className="flex flex-col sm:flex-row items-center justify-between gap-2 text-center w-full text-xs font-mono-tabular text-slate-300 bg-[#090d16]/80 px-4 py-2">
         <span>
-          Mouse / Touch / A·D / Arrows Move &middot; Space / Click Launch &middot; P / Esc Pause &middot; M Sound &middot; C CRT
+          Mouse / Touch / A·D / Arrows Move &middot; Space / Click Launch &middot; P / Esc Pause &middot; M Sound &middot; C CRT &middot; F Reduce Flash
         </span>
         <span className="text-[#ff6b00] font-bold">
           24/7 EMERGENCY FUSE SUPPLY · WWW.FUSECO.COM.AU

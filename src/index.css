@@ -12,6 +12,8 @@
     box-sizing: border-box;
     user-select: none;
     -webkit-user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-tap-highlight-color: transparent;
   }
 
   html,
@@ -22,9 +24,15 @@
     margin: 0;
     padding: 0;
     overflow: hidden;
+    overscroll-behavior: none;
+    touch-action: none;
     background-color: #090d16;
     color: #f8fafc;
     font-family: var(--font-display);
+  }
+
+  canvas {
+    touch-action: none;
   }
 }
 
@@ -76,6 +84,17 @@
   }
 }
 
+@keyframes heat-alarm-flash-reduced {
+  0%, 100% {
+    border-color: #ef4444;
+    box-shadow: 0 0 8px rgba(239, 68, 68, 0.45);
+  }
+  50% {
+    border-color: #f97316;
+    box-shadow: 0 0 3px rgba(249, 115, 22, 0.2);
+  }
+}
+
 .animate-neon-flicker {
   animation: neon-flicker 4.5s infinite;
 }
@@ -86,6 +105,21 @@
 
 .animate-heat-alarm {
   animation: heat-alarm-flash 0.45s ease-in-out infinite;
+}
+
+.reduce-flash .animate-neon-flicker {
+  animation: none !important;
+  opacity: 1 !important;
+  filter: drop-shadow(0 0 6px rgba(255, 107, 0, 0.55));
+}
+
+.reduce-flash .animate-blink {
+  animation: none !important;
+  opacity: 1 !important;
+}
+
+.reduce-flash .animate-heat-alarm {
+  animation: heat-alarm-flash-reduced 0.75s ease-in-out infinite !important;
 }
 
 /* Subtle CRT scanline & vignette overlay (no backdrop-filter over canvas) */

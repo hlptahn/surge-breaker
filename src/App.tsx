@@ -11,7 +11,6 @@ import {
   PADDLE_BASE_WIDTH,
   PADDLE_HEIGHT,
   BALL_RADIUS,
-  BASE_BALL_SPEED,
   MAX_BALL_SPEED,
   AMP_WIDTH_MULTIPLIERS,
   AMP_LEVEL_LABELS,
@@ -23,12 +22,14 @@ import {
   BossEntity,
   BossZap,
   PowerUpType,
+  getStartingBallSpeed,
   calculatePowerFactor,
   calculateBrickScore,
   evaluatePaddleCatch,
   stepPassiveCooling,
   isHighHeatWarning,
   checkExtraLifeMilestone,
+  applyExtraLifeReward,
   selectPowerUpFromRoll,
   testBallVsAABB,
   buildLevelBricks,
@@ -56,6 +57,7 @@ import { StatusModal, EndOfRunStats } from './components/StatusModal';
 type GameState = 'title' | 'playing' | 'paused' | 'gameover';
 
 const HIGH_SCORE_STORAGE_KEY = 'surge_breaker_fuseco_highscore_v1';
+const REDUCE_FLASH_STORAGE_KEY = 'surge_breaker_fuseco_reduce_flash_v1';
 const PARTICLE_POOL_SIZE = 180;
 const FLOATING_TEXT_POOL_SIZE = 32;
 
@@ -105,14 +107,15 @@ interface InternalSimState {
 export default function App() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  // Check URL query params once at startup (?autostart=1&world=1&level=4)
+  // URL shortcuts (autostart, world, level) are ONLY active when ?debug=1 is present
   const searchParams =
     typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
-  const initialAutostart = searchParams?.get('autostart') === '1';
-  const paramWorld = Number(searchParams?.get('world') || 1);
+  const isDebugMode = searchParams?.get('debug') === '1';
+  const initialAutostart = isDebugMode && searchParams?.get('autostart') === '1';
+  const paramWorld = isDebugMode ? Number(searchParams?.get('world') || 1) : 1;
   const initialWorld: 1 | 2 | 3 =
     paramWorld === 2 ? 2 : paramWorld === 3 ? 3 : 1;
-  const paramLevel = Number(searchParams?.get('level') || 1);
+  const paramLevel = isDebugMode ? Number(searchParams?.get('level') || 1) : 1;
   const initialLevel: 1 | 2 | 3 | 4 =
     paramLevel === 2 ? 2 : paramLevel === 3 ? 3 : paramLevel === 4 ? 4 : 1;
 
@@ -126,9 +129,27 @@ export default function App() {
     }
   };
 
+  const loadInitialReduceFlash = (): boolean => {
+    if (typeof window === 'undefined') return false;
+    try {
+      const raw = window.localStorage.getItem(REDUCE_FLASH_STORAGE_KEY);
+      if (raw === '1' || raw === 'true') return true;
+      if (raw === '0' || raw === 'false') return false;
+    } catch {
+      // ignore blocked storage
+    }
+    try {
+      return window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches ?? false;
+    } catch {
+      return false;
+    }
+  };
+
   const [gameState, setGameState] = useState<GameState>(initialAutostart ? 'playing' : 'title');
   const [muted, setMuted] = useState<boolean>(false);
   const [crtEnabled, setCrtEnabled] = useState<boolean>(true);
+  const [reduceFlash, setReduceFlash] = useState<boolean>(() => loadInitialReduceFlash());
+  const reduceFlashRef = useRef<boolean>(reduceFlash);
   const [endStats, setEndStats] = useState<EndOfRunStats | null>(null);
 
   const [hud, setHud] = useState<HudSnapshot>(() => ({
@@ -207,7 +228,7 @@ export default function App() {
     ballY: PADDLE_Y - BALL_RADIUS - 2,
     ballVx: 0,
     ballVy: 0,
-    ballSpeed: BASE_BALL_SPEED,
+    ballSpeed: getStartingBallSpeed(initialWorld, initialLevel),
     ballLaunched: false,
     ballTrail: [],
     bricks: buildLevelBricks(initialWorld, initialLevel),
@@ -230,10 +251,15 @@ export default function App() {
     elapsedTime: 0,
   });
 
-  // Sync document.body.dataset.state whenever gameState changes
+  // Sync document.body.dataset.state whenever gameState or reduceFlash changes
   useEffect(() => {
     document.body.dataset.state = gameState;
   }, [gameState]);
+
+  useEffect(() => {
+    reduceFlashRef.current = reduceFlash;
+    document.body.dataset.reduceFlash = reduceFlash ? 'true' : 'false';
+  }, [reduceFlash]);
 
   const spawnParticleBurst = useCallback(
     (
@@ -363,7 +389,7 @@ export default function App() {
       s.paddleX = ARENA_WIDTH / 2;
       s.paddleWidth = PADDLE_BASE_WIDTH * AMP_WIDTH_MULTIPLIERS[Math.min(3, s.ampLevel)];
       s.ballLaunched = false;
-      s.ballSpeed = BASE_BALL_SPEED + (world - 1) * 32 + (level - 1) * 18;
+      s.ballSpeed = getStartingBallSpeed(world, level);
       s.ballX = s.paddleX;
       s.ballY = PADDLE_Y - BALL_RADIUS - 2;
       s.ballVx = 0;
@@ -413,6 +439,7 @@ export default function App() {
 
   const handleSelectStage = useCallback(
     (world: 1 | 2 | 3, level: 1 | 2 | 3 | 4) => {
+      if (!isDebugMode) return;
       if (document.activeElement instanceof HTMLElement) {
         document.activeElement.blur();
       }
@@ -424,7 +451,7 @@ export default function App() {
       setupStage(world, level, false);
       soundEngine.startMusic(level === 4);
     },
-    [setupStage]
+    [isDebugMode, setupStage]
   );
 
   const handleTogglePause = useCallback(() => {
@@ -474,6 +501,19 @@ export default function App() {
     setCrtEnabled((prev) => !prev);
   }, []);
 
+  const handleToggleReduceFlash = useCallback(() => {
+    setReduceFlash((prev) => {
+      const next = !prev;
+      reduceFlashRef.current = next;
+      try {
+        window.localStorage.setItem(REDUCE_FLASH_STORAGE_KEY, next ? '1' : '0');
+      } catch {
+        // ignore storage errors
+      }
+      return next;
+    });
+  }, []);
+
   // Keyboard & Blur Listeners
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -488,6 +528,11 @@ export default function App() {
       if (keyLower === 'c') {
         e.preventDefault();
         handleToggleCrt();
+        return;
+      }
+      if (keyLower === 'f') {
+        e.preventDefault();
+        handleToggleReduceFlash();
         return;
       }
       if (keyLower === 'p' || code === 'Escape') {
@@ -533,7 +578,14 @@ export default function App() {
       window.removeEventListener('blur', onBlurOrVisibility);
       document.removeEventListener('visibilitychange', onBlurOrVisibility);
     };
-  }, [handleToggleMute, handleToggleCrt, handleTogglePause, startNewGame, launchBall]);
+  }, [
+    handleToggleMute,
+    handleToggleCrt,
+    handleToggleReduceFlash,
+    handleTogglePause,
+    startNewGame,
+    launchBall,
+  ]);
 
   // Main 60fps Canvas Simulation & Render Loop
   useEffect(() => {
@@ -546,13 +598,15 @@ export default function App() {
       s.combo = 0;
       s.powerFactor = 0.7;
       s.ballLaunched = false;
+      // Reset ball speed to this level's starting speed when a life is lost
+      s.ballSpeed = getStartingBallSpeed(s.world, s.level);
       s.ballTrail = [];
       s.bossZaps = [];
 
       if (isHeatBlow) {
-        // Satisfying glass-shatter animation: glass shards, sparks, bright flash, screen shake
+        // Satisfying glass-shatter animation: glass shards, sparks, flash (max ~60% when off, 15% when reduceFlash on), screen shake
         soundEngine.playFuseBlowGlassShatter();
-        s.screenFlashAlpha = 0.9;
+        s.screenFlashAlpha = reduceFlashRef.current ? 0.15 : 0.6;
         s.screenFlashColor = '#ffffff';
         s.screenShakeTrauma = 1.0;
         s.hitstopTimer = 0.07;
@@ -570,7 +624,7 @@ export default function App() {
         // Ball dropped below bottom
         soundEngine.playZapHitPlayer();
         s.screenShakeTrauma = 0.65;
-        s.screenFlashAlpha = 0.45;
+        s.screenFlashAlpha = reduceFlashRef.current ? 0.15 : 0.45;
         s.screenFlashColor = '#ef4444';
         spawnParticleBurst(s.ballX, ARENA_HEIGHT - 12, 20, ['#ff6b00', '#ef4444', '#fde047']);
         spawnFloatingText(s.paddleX, PADDLE_Y - 24, 'SURGE LOST!', '#f97316', 1.15);
@@ -584,25 +638,103 @@ export default function App() {
 
     const addScore = (s: InternalSimState, points: number) => {
       if (points <= 0) return;
-      const prevScore = s.score;
-      s.score += points;
+      let pendingPoints = points;
 
-      // Check 10,000 point extra life milestone
-      const extraLives = checkExtraLifeMilestone(prevScore, s.score);
-      if (extraLives > 0) {
-        s.lives += extraLives;
-        soundEngine.playPowerUp('AFTER_HOURS');
-        spawnFloatingText(s.paddleX, PADDLE_Y - 42, '10,000 PTS · +1 FUSE LIFE!', '#facc15', 1.25);
+      while (pendingPoints > 0) {
+        const prevScore = s.score;
+        s.score += pendingPoints;
+        pendingPoints = 0;
+
+        // Check 25,000-point extra life milestone (with 6-life cap)
+        const milestoneCount = checkExtraLifeMilestone(prevScore, s.score);
+        if (milestoneCount > 0) {
+          const reward = applyExtraLifeReward(s.lives, milestoneCount);
+          s.lives = reward.newLives;
+          soundEngine.playPowerUp('AFTER_HOURS');
+          if (reward.livesAdded > 0) {
+            spawnFloatingText(
+              s.paddleX,
+              PADDLE_Y - 42,
+              '25,000 PTS · +1 FUSE LIFE!',
+              '#facc15',
+              1.25
+            );
+          }
+          if (reward.cappedCount > 0) {
+            pendingPoints += reward.bonusPoints;
+            spawnFloatingText(
+              s.paddleX,
+              PADDLE_Y - 58,
+              'MAX FUSES · +2,500',
+              '#facc15',
+              1.2
+            );
+          }
+        }
       }
 
       if (s.score > s.highScore) {
-        s.highScore = s.score;
-        try {
-          window.localStorage.setItem(HIGH_SCORE_STORAGE_KEY, String(Math.round(s.highScore)));
-        } catch {
-          // ignore storage quota errors
+        if (!isDebugMode) {
+          s.highScore = s.score;
+          try {
+            window.localStorage.setItem(HIGH_SCORE_STORAGE_KEY, String(Math.round(s.highScore)));
+          } catch {
+            // ignore storage quota errors
+          }
         }
       }
+    };
+
+    const collectPowerUpCapsule = (
+      s: InternalSimState,
+      pu: FallingPowerUp,
+      isClearSweep: boolean = false
+    ) => {
+      soundEngine.playPowerUp(pu.type);
+      const meta = POWERUP_CATALOG[pu.type];
+      addScore(s, 250);
+
+      const textX = pu.x;
+      const textY = isClearSweep
+        ? Math.max(96, Math.min(PADDLE_Y - 24, pu.y))
+        : PADDLE_Y - 22;
+
+      if (pu.type === 'CIRCUIT_BREAKER') {
+        s.shieldHits = 2;
+        spawnFloatingText(textX, textY, 'CIRCUIT BREAKER SHIELD ONLINE!', '#00e5ff', 1.15);
+      } else if (pu.type === 'HIGHER_AMP') {
+        s.ampLevel = Math.min(3, s.ampLevel + 1);
+        s.ampTimer = 15;
+        s.paddleWidth = PADDLE_BASE_WIDTH * AMP_WIDTH_MULTIPLIERS[Math.min(3, s.ampLevel)];
+        const ampLabel = AMP_LEVEL_LABELS[s.ampLevel];
+        spawnFloatingText(textX, textY, `UPGRADED TO ${ampLabel} FUSE!`, '#ff6b00', 1.15);
+      } else if (pu.type === 'COOLING') {
+        s.heat = 0;
+        s.screenFlashAlpha = reduceFlashRef.current ? 0.15 : 0.5;
+        s.screenFlashColor = '#38bdf8';
+        spawnParticleBurst(s.paddleX, PADDLE_Y, 24, ['#38bdf8', '#e0f2fe', '#00e5ff']);
+        spawnFloatingText(textX, textY, 'THERMAL RESET · 0% HEAT!', '#38bdf8', 1.2);
+      } else if (pu.type === 'AFTER_HOURS') {
+        const reward = applyExtraLifeReward(s.lives, 1);
+        s.lives = reward.newLives;
+        spawnParticleBurst(s.paddleX, PADDLE_Y, 24, ['#facc15', '#ff6b00', '#ffffff']);
+        if (reward.livesAdded > 0) {
+          spawnFloatingText(textX, textY - 4, 'AFTER-HOURS CALL-OUT · +1 LIFE!', '#facc15', 1.25);
+        } else {
+          addScore(s, reward.bonusPoints);
+          spawnFloatingText(textX, textY - 4, 'MAX FUSES · +2,500', '#facc15', 1.25);
+        }
+      }
+
+      spawnParticleBurst(pu.x, pu.y, 10, [meta.color, '#ffffff']);
+    };
+
+    const collectAllFallingPowerUpsOnClear = (s: InternalSimState) => {
+      if (s.powerUps.length === 0) return;
+      for (let i = 0; i < s.powerUps.length; i++) {
+        collectPowerUpCapsule(s, s.powerUps[i], true);
+      }
+      s.powerUps = [];
     };
 
     const advanceToNextStage = (s: InternalSimState) => {
@@ -807,31 +939,7 @@ export default function App() {
           pu.y - pu.height / 2 <= PADDLE_Y + PADDLE_HEIGHT;
 
         if (caughtX && caughtY) {
-          soundEngine.playPowerUp(pu.type);
-          const meta = POWERUP_CATALOG[pu.type];
-          addScore(s, 250);
-
-          if (pu.type === 'CIRCUIT_BREAKER') {
-            s.shieldHits = 2;
-            spawnFloatingText(pu.x, PADDLE_Y - 22, 'CIRCUIT BREAKER SHIELD ONLINE!', '#00e5ff', 1.15);
-          } else if (pu.type === 'HIGHER_AMP') {
-            s.ampLevel = Math.min(3, s.ampLevel + 1);
-            s.ampTimer = 15;
-            const ampLabel = AMP_LEVEL_LABELS[s.ampLevel];
-            spawnFloatingText(pu.x, PADDLE_Y - 22, `UPGRADED TO ${ampLabel} FUSE!`, '#ff6b00', 1.15);
-          } else if (pu.type === 'COOLING') {
-            s.heat = 0;
-            s.screenFlashAlpha = 0.55;
-            s.screenFlashColor = '#38bdf8';
-            spawnParticleBurst(s.paddleX, PADDLE_Y, 24, ['#38bdf8', '#e0f2fe', '#00e5ff']);
-            spawnFloatingText(pu.x, PADDLE_Y - 22, 'THERMAL RESET · 0% HEAT!', '#38bdf8', 1.2);
-          } else if (pu.type === 'AFTER_HOURS') {
-            s.lives += 1;
-            spawnParticleBurst(s.paddleX, PADDLE_Y, 24, ['#facc15', '#ff6b00', '#ffffff']);
-            spawnFloatingText(pu.x, PADDLE_Y - 26, 'AFTER-HOURS CALL-OUT · +1 LIFE!', '#facc15', 1.25);
-          }
-
-          spawnParticleBurst(pu.x, pu.y, 10, [meta.color, '#ffffff']);
+          collectPowerUpCapsule(s, pu, false);
           s.powerUps.splice(i, 1);
           continue;
         }
@@ -930,7 +1038,7 @@ export default function App() {
           s.heat = Math.min(100, s.heat + 20);
           soundEngine.playZapHitPlayer();
           s.screenShakeTrauma = 0.55;
-          s.screenFlashAlpha = 0.35;
+          s.screenFlashAlpha = reduceFlashRef.current ? 0.15 : 0.35;
           s.screenFlashColor = '#ef4444';
           spawnParticleBurst(zap.x, PADDLE_Y, 16, ['#fde047', '#ef4444', '#ff6b00']);
           spawnFloatingText(s.paddleX, PADDLE_Y - 24, 'ZAP HIT! +20% HEAT', '#ef4444', 1.15);
@@ -1118,10 +1226,11 @@ export default function App() {
               }
 
               if (s.boss.hp <= 0) {
-                // Boss defeated!
+                // Boss defeated! Treat any falling power-up capsules as caught
+                collectAllFallingPowerUpsOnClear(s);
                 s.hitstopTimer = 0.08;
                 s.screenShakeTrauma = 1.0;
-                s.screenFlashAlpha = 0.85;
+                s.screenFlashAlpha = reduceFlashRef.current ? 0.15 : 0.55;
                 s.screenFlashColor = '#00e5ff';
                 addScore(s, 2500 * s.world);
                 spawnParticleBurst(
@@ -1230,6 +1339,8 @@ export default function App() {
 
             // Check if regular level is cleared
             if (s.level < 4 && isRegularLevelCleared(s.bricks)) {
+              // Treat any falling power-up capsules as caught before clearing
+              collectAllFallingPowerUpsOnClear(s);
               soundEngine.playLevelClearJingle();
               s.levelClearBanner = WORLDS[s.world].clearMessage;
               s.levelClearTimer = 2.3;
@@ -1248,9 +1359,10 @@ export default function App() {
       const s = simRef.current;
       ctx.save();
 
-      // Decaying trauma^2 camera shake
+      // Decaying trauma^2 camera shake (cut to 25% when Reduce Flash is ON)
       if (s.screenShakeTrauma > 0) {
-        const shake = s.screenShakeTrauma * s.screenShakeTrauma * 11;
+        const shakeScale = reduceFlashRef.current ? 0.25 : 1.0;
+        const shake = s.screenShakeTrauma * s.screenShakeTrauma * 11 * shakeScale;
         const dx = (Math.random() - 0.5) * 2 * shake;
         const dy = (Math.random() - 0.5) * 2 * shake;
         ctx.translate(dx, dy);
@@ -1341,9 +1453,11 @@ export default function App() {
       }
 
       // 10. Full-arena flash on Fuse Blow or Frosty Cooling pickup
+      // Capped to <= 15% opacity when Reduce Flash is ON, and <= 60% when OFF
       if (s.screenFlashAlpha > 0) {
         ctx.fillStyle = s.screenFlashColor;
-        ctx.globalAlpha = Math.min(0.85, s.screenFlashAlpha);
+        const maxAlpha = reduceFlashRef.current ? 0.15 : 0.6;
+        ctx.globalAlpha = Math.min(maxAlpha, s.screenFlashAlpha);
         ctx.fillRect(0, 0, ARENA_WIDTH, ARENA_HEIGHT);
         ctx.globalAlpha = 1;
       }
@@ -1378,22 +1492,70 @@ export default function App() {
     return () => {
       window.cancelAnimationFrame(animationFrameId);
     };
-  }, [setupStage, spawnFloatingText, spawnParticleBurst, syncHudFromSim]);
+  }, [setupStage, spawnFloatingText, spawnParticleBurst, syncHudFromSim, isDebugMode]);
 
   // Convert client pointer X to arena X coordinate via live getBoundingClientRect()
-  const updatePointerX = (clientX: number) => {
+  const updatePointerX = useCallback((clientX: number) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
     if (rect.width <= 0) return;
     const scaleX = ARENA_WIDTH / rect.width;
     pointerTargetXRef.current = (clientX - rect.left) * scaleX;
-  };
+  }, []);
+
+  // Attach non-passive touch listeners on the game canvas so dragging/tapping on phones/tablets
+  // never scrolls the page, pull-to-refreshes, pinch-zooms, or double-tap zooms
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const handleTouchStart = (e: TouchEvent) => {
+      if (e.cancelable) {
+        e.preventDefault();
+      }
+      if (e.touches.length > 0) {
+        updatePointerX(e.touches[0].clientX);
+      }
+      if (simRef.current.mode === 'playing') {
+        launchBall();
+      }
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (e.cancelable) {
+        e.preventDefault();
+      }
+      if (e.touches.length > 0) {
+        updatePointerX(e.touches[0].clientX);
+      }
+    };
+
+    const handleTouchEnd = (e: TouchEvent) => {
+      if (e.cancelable) {
+        e.preventDefault();
+      }
+    };
+
+    canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
+    canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
+    canvas.addEventListener('touchend', handleTouchEnd, { passive: false });
+
+    return () => {
+      canvas.removeEventListener('touchstart', handleTouchStart);
+      canvas.removeEventListener('touchmove', handleTouchMove);
+      canvas.removeEventListener('touchend', handleTouchEnd);
+    };
+  }, [launchBall, updatePointerX]);
 
   return (
-    <main className="relative w-screen h-screen overflow-hidden bg-[#090d16] flex items-center justify-center select-none">
+    <main
+      className={`relative w-screen h-screen overflow-hidden bg-[#090d16] flex items-center justify-center select-none touch-none ${
+        reduceFlash ? 'reduce-flash' : ''
+      }`}
+    >
       {/* Isolated Full-Viewport Responsive Game Canvas Container */}
-      <div className="relative w-full h-full flex items-center justify-center">
+      <div className="relative w-full h-full flex items-center justify-center touch-none">
         <canvas
           ref={canvasRef}
           width={ARENA_WIDTH}
@@ -1405,20 +1567,7 @@ export default function App() {
               launchBall();
             }
           }}
-          onTouchStart={(e) => {
-            if (e.touches.length > 0) {
-              updatePointerX(e.touches[0].clientX);
-            }
-            if (simRef.current.mode === 'playing') {
-              launchBall();
-            }
-          }}
-          onTouchMove={(e) => {
-            if (e.touches.length > 0) {
-              updatePointerX(e.touches[0].clientX);
-            }
-          }}
-          className="max-w-full max-h-full aspect-[4/3] w-auto h-auto object-contain shadow-[0_0_60px_rgba(0,0,0,0.95)] cursor-crosshair"
+          className="max-w-full max-h-full aspect-[4/3] w-auto h-auto object-contain shadow-[0_0_60px_rgba(0,0,0,0.95)] cursor-crosshair touch-none"
         />
       </div>
 
@@ -1437,9 +1586,11 @@ export default function App() {
           highScore={hud.highScore}
           muted={muted}
           crtEnabled={crtEnabled}
+          reduceFlash={reduceFlash}
           onStartGame={startNewGame}
           onToggleMute={handleToggleMute}
           onToggleCrt={handleToggleCrt}
+          onToggleReduceFlash={handleToggleReduceFlash}
         />
       )}
 
@@ -1449,8 +1600,10 @@ export default function App() {
           hud={hud}
           muted={muted}
           crtEnabled={crtEnabled}
+          reduceFlash={reduceFlash}
           onToggleMute={handleToggleMute}
           onToggleCrt={handleToggleCrt}
+          onToggleReduceFlash={handleToggleReduceFlash}
           onPause={handleTogglePause}
         />
       )}
@@ -1464,14 +1617,18 @@ export default function App() {
           currentLevel={hud.level}
           muted={muted}
           crtEnabled={crtEnabled}
+          reduceFlash={reduceFlash}
+          debugMode={isDebugMode}
           onResume={handleTogglePause}
           onRestartRun={startNewGame}
           onSelectStage={handleSelectStage}
           onReturnTitle={handleReturnTitle}
           onToggleMute={handleToggleMute}
           onToggleCrt={handleToggleCrt}
+          onToggleReduceFlash={handleToggleReduceFlash}
         />
       )}
     </main>
   );
 }
+

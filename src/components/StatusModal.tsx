@@ -18,12 +18,15 @@ interface StatusModalProps {
   currentLevel: 1 | 2 | 3 | 4;
   muted: boolean;
   crtEnabled: boolean;
+  reduceFlash: boolean;
+  debugMode: boolean;
   onResume: () => void;
   onRestartRun: () => void;
   onSelectStage: (world: 1 | 2 | 3, level: 1 | 2 | 3 | 4) => void;
   onReturnTitle: () => void;
   onToggleMute: () => void;
   onToggleCrt: () => void;
+  onToggleReduceFlash: () => void;
 }
 
 export const StatusModal: React.FC<StatusModalProps> = ({
@@ -33,12 +36,15 @@ export const StatusModal: React.FC<StatusModalProps> = ({
   currentLevel,
   muted,
   crtEnabled,
+  reduceFlash,
+  debugMode,
   onResume,
   onRestartRun,
   onSelectStage,
   onReturnTitle,
   onToggleMute,
   onToggleCrt,
+  onToggleReduceFlash,
 }) => {
   if (mode === 'paused') {
     const worldMeta = WORLDS[currentWorld];
@@ -74,51 +80,61 @@ export const StatusModal: React.FC<StatusModalProps> = ({
               RESTART NEW RUN
             </button>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-3 gap-2">
               <button
                 type="button"
                 onClick={onToggleMute}
-                className="py-2 bg-[#111927] hover:border-[#00e5ff] text-slate-200 font-mono-tabular text-xs font-bold border-2 border-slate-700 cursor-pointer"
+                className="py-2 px-2 bg-[#111927] hover:border-[#00e5ff] text-slate-200 font-mono-tabular text-xs font-bold border-2 border-slate-700 cursor-pointer whitespace-nowrap"
               >
                 {muted ? 'SOUND: OFF [M]' : 'SOUND: ON [M]'}
               </button>
               <button
                 type="button"
                 onClick={onToggleCrt}
-                className="py-2 bg-[#111927] hover:border-[#00e5ff] text-slate-200 font-mono-tabular text-xs font-bold border-2 border-slate-700 cursor-pointer"
+                className="py-2 px-2 bg-[#111927] hover:border-[#00e5ff] text-slate-200 font-mono-tabular text-xs font-bold border-2 border-slate-700 cursor-pointer whitespace-nowrap"
               >
                 {crtEnabled ? 'CRT: ON [C]' : 'CRT: OFF [C]'}
+              </button>
+              <button
+                type="button"
+                data-testid="modal-toggle-reduce-flash"
+                onClick={onToggleReduceFlash}
+                className="py-2 px-2 bg-[#111927] hover:border-[#ffb703] text-slate-200 font-mono-tabular text-xs font-bold border-2 border-slate-700 cursor-pointer whitespace-nowrap"
+              >
+                {reduceFlash ? 'REDUCE FLASH: ON [F]' : 'REDUCE FLASH: OFF [F]'}
               </button>
             </div>
           </div>
 
-          {/* Stage Jump Grid for practicing Worlds & Bosses */}
-          <div className="border-t border-slate-800 pt-4 mb-5 text-left">
-            <div className="text-[11px] font-mono-tabular uppercase tracking-wider text-slate-400 mb-2 text-center">
-              JUMP TO SUBSTATION STAGE / BOSS
+          {/* Stage Jump Grid — ONLY rendered when ?debug=1 is present */}
+          {debugMode && (
+            <div className="border-t border-slate-800 pt-4 mb-5 text-left" data-testid="debug-stage-jump">
+              <div className="text-[11px] font-mono-tabular uppercase tracking-wider text-slate-400 mb-2 text-center">
+                JUMP TO SUBSTATION STAGE / BOSS
+              </div>
+              <div className="grid grid-cols-4 gap-1.5">
+                {([1, 2, 3] as const).map((w) =>
+                  ([1, 2, 3, 4] as const).map((lvl) => {
+                    const active = w === currentWorld && lvl === currentLevel;
+                    return (
+                      <button
+                        key={`${w}-${lvl}`}
+                        type="button"
+                        onClick={() => onSelectStage(w, lvl)}
+                        className={`py-1.5 px-2 text-[11px] font-mono-tabular font-bold border cursor-pointer transition-colors ${
+                          active
+                            ? 'bg-[#ff6b00] text-[#090d16] border-white'
+                            : 'bg-[#090d16] text-slate-300 border-slate-800 hover:border-[#00e5ff]'
+                        }`}
+                      >
+                        W{w}-{lvl === 4 ? 'BOSS' : lvl}
+                      </button>
+                    );
+                  })
+                )}
+              </div>
             </div>
-            <div className="grid grid-cols-4 gap-1.5">
-              {([1, 2, 3] as const).map((w) =>
-                ([1, 2, 3, 4] as const).map((lvl) => {
-                  const active = w === currentWorld && lvl === currentLevel;
-                  return (
-                    <button
-                      key={`${w}-${lvl}`}
-                      type="button"
-                      onClick={() => onSelectStage(w, lvl)}
-                      className={`py-1.5 px-2 text-[11px] font-mono-tabular font-bold border cursor-pointer transition-colors ${
-                        active
-                          ? 'bg-[#ff6b00] text-[#090d16] border-white'
-                          : 'bg-[#090d16] text-slate-300 border-slate-800 hover:border-[#00e5ff]'
-                      }`}
-                    >
-                      W{w}-{lvl === 4 ? 'BOSS' : lvl}
-                    </button>
-                  );
-                })
-              )}
-            </div>
-          </div>
+          )}
 
           <button
             type="button"

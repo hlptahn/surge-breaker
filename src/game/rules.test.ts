@@ -8,6 +8,11 @@ import {
   stepPassiveCooling,
   isHighHeatWarning,
   checkExtraLifeMilestone,
+  applyExtraLifeReward,
+  selectPowerUpFromRoll,
+  getStartingBallSpeed,
+  MAX_LIVES,
+  MAX_LIVES_BONUS_POINTS,
   testBallVsAABB,
   buildLevelBricks,
   isRegularLevelCleared,
@@ -63,10 +68,59 @@ test('Passive cooling reduces heat by 1% per second only when below 80%', () => 
   assert.equal(stepPassiveCooling(0.5, 2.0), 0);
 });
 
-test('Extra life milestone triggers at every 10,000 points', () => {
-  assert.equal(checkExtraLifeMilestone(9800, 10200), 1);
-  assert.equal(checkExtraLifeMilestone(10200, 19900), 0);
-  assert.equal(checkExtraLifeMilestone(9500, 20500), 2);
+test('Extra life milestone triggers at every 25,000 points', () => {
+  // Does not trigger at 10,000
+  assert.equal(checkExtraLifeMilestone(9800, 10200), 0);
+  // Triggers at 25,000
+  assert.equal(checkExtraLifeMilestone(24800, 25200), 1);
+  assert.equal(checkExtraLifeMilestone(25200, 49900), 0);
+  assert.equal(checkExtraLifeMilestone(24500, 50500), 2);
+});
+
+test('Lives are capped at 6 and extra life rewards at cap grant +2,500 bonus points', () => {
+  assert.equal(MAX_LIVES, 6);
+  assert.equal(MAX_LIVES_BONUS_POINTS, 2500);
+
+  // Below cap: increments lives with 0 bonus points
+  const belowCap = applyExtraLifeReward(4, 1);
+  assert.equal(belowCap.newLives, 5);
+  assert.equal(belowCap.livesAdded, 1);
+  assert.equal(belowCap.cappedCount, 0);
+  assert.equal(belowCap.bonusPoints, 0);
+
+  // At cap (6): stays at 6 lives and awards +2,500 bonus points
+  const atCap = applyExtraLifeReward(6, 1);
+  assert.equal(atCap.newLives, 6);
+  assert.equal(atCap.livesAdded, 0);
+  assert.equal(atCap.cappedCount, 1);
+  assert.equal(atCap.bonusPoints, 2500);
+
+  // Crossing into cap with multiple rewards (5 lives + 2 rewards -> 6 lives + 2,500 bonus)
+  const mixed = applyExtraLifeReward(5, 2);
+  assert.equal(mixed.newLives, 6);
+  assert.equal(mixed.livesAdded, 1);
+  assert.equal(mixed.cappedCount, 1);
+  assert.equal(mixed.bonusPoints, 2500);
+});
+
+test('After-Hours Call-Out drop rate is 3% normally and 5% on last life', () => {
+  // Normal lives (3): < 0.03 is AFTER_HOURS, >= 0.03 is COOLING / HIGHER_AMP / CIRCUIT_BREAKER
+  assert.equal(selectPowerUpFromRoll(0.029, 20, 3), 'AFTER_HOURS');
+  assert.equal(selectPowerUpFromRoll(0.031, 20, 3), 'COOLING');
+  assert.equal(selectPowerUpFromRoll(0.39, 20, 3), 'HIGHER_AMP');
+  assert.equal(selectPowerUpFromRoll(0.71, 20, 3), 'CIRCUIT_BREAKER');
+
+  // Last life (1): < 0.05 is AFTER_HOURS, >= 0.05 is COOLING
+  assert.equal(selectPowerUpFromRoll(0.049, 20, 1), 'AFTER_HOURS');
+  assert.equal(selectPowerUpFromRoll(0.051, 20, 1), 'COOLING');
+});
+
+test('Starting ball speed scales cleanly by world and level', () => {
+  const w1l1 = getStartingBallSpeed(1, 1);
+  const w1l2 = getStartingBallSpeed(1, 2);
+  const w2l1 = getStartingBallSpeed(2, 1);
+  assert.ok(w1l2 > w1l1);
+  assert.ok(w2l1 > w1l1);
 });
 
 test('Circle vs AABB collision detects hits and surface normals accurately', () => {

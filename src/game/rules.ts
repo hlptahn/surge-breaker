@@ -278,6 +278,16 @@ export const PADDLE_HEIGHT = 22;
 export const BALL_RADIUS = 8;
 export const BASE_BALL_SPEED = 435;
 export const MAX_BALL_SPEED = 740;
+export const MAX_LIVES = 6;
+export const EXTRA_LIFE_MILESTONE_POINTS = 25000;
+export const MAX_LIVES_BONUS_POINTS = 2500;
+
+/**
+ * Returns the starting ball speed for a given world (1..3) and level (1..4).
+ */
+export function getStartingBallSpeed(world: 1 | 2 | 3, level: 1 | 2 | 3 | 4): number {
+  return BASE_BALL_SPEED + (world - 1) * 32 + (level - 1) * 18;
+}
 
 /**
  * Calculates Power Factor reading (0.70 to 0.99) from current brick hit combo.
@@ -386,12 +396,48 @@ export function isHighHeatWarning(heat: number): boolean {
 }
 
 /**
- * Checks if extra lives should be awarded at every 10,000-point boundary.
+ * Checks if extra lives should be awarded at every 25,000-point boundary.
  */
 export function checkExtraLifeMilestone(prevScore: number, newScore: number): number {
-  const prevMilestone = Math.floor(prevScore / 10000);
-  const newMilestone = Math.floor(newScore / 10000);
+  const prevMilestone = Math.floor(prevScore / EXTRA_LIFE_MILESTONE_POINTS);
+  const newMilestone = Math.floor(newScore / EXTRA_LIFE_MILESTONE_POINTS);
   return Math.max(0, newMilestone - prevMilestone);
+}
+
+export interface ExtraLifeRewardResult {
+  newLives: number;
+  livesAdded: number;
+  cappedCount: number;
+  bonusPoints: number;
+}
+
+/**
+ * Applies one or more extra-life rewards with a strict cap of MAX_LIVES (6).
+ * Any life reward when already at 6 lives grants +2,500 bonus points instead.
+ */
+export function applyExtraLifeReward(
+  currentLives: number,
+  rewardCount: number = 1
+): ExtraLifeRewardResult {
+  let lives = Math.max(0, Math.min(MAX_LIVES, currentLives));
+  let livesAdded = 0;
+  let cappedCount = 0;
+
+  for (let i = 0; i < rewardCount; i++) {
+    if (lives < MAX_LIVES) {
+      lives += 1;
+      livesAdded += 1;
+    } else {
+      cappedCount += 1;
+    }
+  }
+
+  return {
+    newLives: lives,
+    livesAdded,
+    cappedCount,
+    bonusPoints: cappedCount * MAX_LIVES_BONUS_POINTS,
+  };
 }
 
 /**
@@ -439,23 +485,34 @@ export function getFilamentVisuals(heat: number): {
 
 /**
  * Selects a power-up type deterministically or from a random roll [0..1).
+ * "After-Hours Call-Out" is 3% base (reduced from 9%) and 5% on last life (reduced from 14%),
+ * with the freed share (+6% normal / +9% last life) spread evenly (+2% / +3% each) across the other 3 power-ups.
  */
 export function selectPowerUpFromRoll(roll: number, currentHeat: number, currentLives: number): PowerUpType {
-  // Rare After-Hours Call-Out (+1 life): 9% base chance (14% if at 1 life)
-  const afterHoursThreshold = currentLives <= 1 ? 0.14 : 0.09;
+  const onLastLife = currentLives <= 1;
+  const afterHoursThreshold = onLastLife ? 0.05 : 0.03;
+  const freedPerOther = onLastLife ? 0.03 : 0.02;
+
   if (roll < afterHoursThreshold) {
     return 'AFTER_HOURS';
   }
-  // If heat is high (>55%), weight Cooling higher
-  if (currentHeat > 55 && roll < afterHoursThreshold + 0.36) {
+
+  // If heat is high (>55%), weight Cooling higher (+freedPerOther)
+  if (currentHeat > 55 && roll < afterHoursThreshold + 0.36 + freedPerOther) {
     return 'COOLING';
   }
-  if (roll < 0.42) {
+
+  const baseCoolingShare = (onLastLife ? 0.28 : 0.33) + freedPerOther;
+  const coolingThreshold = afterHoursThreshold + baseCoolingShare;
+  if (roll < coolingThreshold) {
     return 'COOLING';
   }
-  if (roll < 0.72) {
+
+  const higherAmpShare = 0.30 + freedPerOther;
+  if (roll < coolingThreshold + higherAmpShare) {
     return 'HIGHER_AMP';
   }
+
   return 'CIRCUIT_BREAKER';
 }
 
