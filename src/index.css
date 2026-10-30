@@ -1,5 +1,69 @@
 @import "tailwindcss";
 
+@font-face {
+  font-family: 'Press Start 2P';
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url('/fonts/press-start-2p-400-normal.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Silkscreen';
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url('/fonts/silkscreen-400-normal.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Silkscreen';
+  font-style: normal;
+  font-weight: 700;
+  font-display: block;
+  src: url('/fonts/silkscreen-700-normal.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 500 800;
+  font-display: block;
+  src: url('/fonts/jetbrains-mono-latin.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Chakra Petch';
+  font-style: normal;
+  font-weight: 500;
+  font-display: block;
+  src: url('/fonts/chakra-petch-500-normal.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Chakra Petch';
+  font-style: normal;
+  font-weight: 600;
+  font-display: block;
+  src: url('/fonts/chakra-petch-600-normal.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Chakra Petch';
+  font-style: normal;
+  font-weight: 700;
+  font-display: block;
+  src: url('/fonts/chakra-petch-700-normal.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Chakra Petch';
+  font-style: italic;
+  font-weight: 700;
+  font-display: block;
+  src: url('/fonts/chakra-petch-700-italic.woff2') format('woff2');
+}
+
 @layer base {
   :root {
     --font-pixel: 'Press Start 2P', 'Silkscreen', monospace;
@@ -25,7 +89,6 @@
     padding: 0;
     overflow: hidden;
     overscroll-behavior: none;
-    touch-action: none;
     background-color: #090d16;
     color: #f8fafc;
     font-family: var(--font-display);

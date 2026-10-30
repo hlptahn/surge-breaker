@@ -598,23 +598,23 @@ export function drawBossAndZaps(
     ctx.restore();
   }
 
-  // 2. Top porcelain/copper HV bushings & coils
+  // 2. Top porcelain/copper HV bushings & coils (kept strictly inside y >= 64 arena border)
   const coilCount = world === 1 ? 2 : world === 2 ? 3 : 4;
   const coilSpacing = width / (coilCount + 1);
   for (let c = 1; c <= coilCount; c++) {
     const cx = x + coilSpacing * c;
     // Insulator ribs
     ctx.fillStyle = '#334155';
-    ctx.fillRect(cx - 12, y - 22, 24, 22);
+    ctx.fillRect(cx - 12, y - 16, 24, 16);
     ctx.strokeStyle = primaryColor;
     ctx.lineWidth = 2;
-    ctx.strokeRect(cx - 12, y - 22, 24, 22);
+    ctx.strokeRect(cx - 12, y - 16, 24, 16);
 
     // Glowing arc sphere on top of bushing
-    const pulse = 5 + Math.sin(timeSec * 14 + c) * 2.5;
+    const pulse = 4.5 + Math.sin(timeSec * 14 + c) * 2;
     ctx.fillStyle = primaryColor;
     ctx.beginPath();
-    ctx.arc(cx, y - 26, pulse, 0, Math.PI * 2);
+    ctx.arc(cx, y - 20, pulse, 0, Math.PI * 2);
     ctx.fill();
   }
 

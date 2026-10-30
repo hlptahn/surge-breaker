@@ -5,9 +5,11 @@ import {
   getPowerFactorMultiplier,
   calculateBrickScore,
   evaluatePaddleCatch,
+  getCentreCatchMessage,
   stepPassiveCooling,
   isHighHeatWarning,
   checkExtraLifeMilestone,
+  getExtraLifeMilestoneMessage,
   applyExtraLifeReward,
   selectPowerUpFromRoll,
   getStartingBallSpeed,
@@ -53,6 +55,24 @@ test('Heat Meter decreases on centre third paddle catch and increases on left/ri
   assert.equal(rightComboCatch.newHeat, 54);
 });
 
+test('Centre catch message always matches whether heat went down or went up/flat from combo', () => {
+  const cool3 = getCentreCatchMessage(-3);
+  assert.equal(cool3.text, 'CENTRE COOL -3% HEAT');
+  assert.equal(cool3.color, '#00e5ff');
+
+  const cool1 = getCentreCatchMessage(-1);
+  assert.equal(cool1.text, 'CENTRE COOL -1% HEAT');
+  assert.equal(cool1.color, '#00e5ff');
+
+  const flat0 = getCentreCatchMessage(0);
+  assert.equal(flat0.text, 'COMBO HEAT +0%');
+  assert.equal(flat0.color, '#ffb703');
+
+  const up6 = getCentreCatchMessage(6);
+  assert.equal(up6.text, 'COMBO HEAT +6%');
+  assert.equal(up6.color, '#ffb703');
+});
+
 test('Fuse blows when heat reaches 100% and high heat warning activates above 80%', () => {
   assert.equal(isHighHeatWarning(80), false);
   assert.equal(isHighHeatWarning(80.5), true);
@@ -68,13 +88,17 @@ test('Passive cooling reduces heat by 1% per second only when below 80%', () => 
   assert.equal(stepPassiveCooling(0.5, 2.0), 0);
 });
 
-test('Extra life milestone triggers at every 25,000 points', () => {
+test('Extra life milestone triggers at every 25,000 points and formats the reached milestone', () => {
   // Does not trigger at 10,000
   assert.equal(checkExtraLifeMilestone(9800, 10200), 0);
   // Triggers at 25,000
   assert.equal(checkExtraLifeMilestone(24800, 25200), 1);
   assert.equal(checkExtraLifeMilestone(25200, 49900), 0);
   assert.equal(checkExtraLifeMilestone(24500, 50500), 2);
+
+  assert.equal(getExtraLifeMilestoneMessage(25200), '25,000 PTS · +1 FUSE LIFE!');
+  assert.equal(getExtraLifeMilestoneMessage(50500), '50,000 PTS · +1 FUSE LIFE!');
+  assert.equal(getExtraLifeMilestoneMessage(75100), '75,000 PTS · +1 FUSE LIFE!');
 });
 
 test('Lives are capped at 6 and extra life rewards at cap grant +2,500 bonus points', () => {
@@ -133,7 +157,7 @@ test('Circle vs AABB collision detects hits and surface normals accurately', () 
   assert.equal(miss.hit, false);
 });
 
-test('Worlds and levels generate valid destructible and boss configurations', () => {
+test('Worlds and levels generate valid destructible and boss configurations within arena bounds', () => {
   for (const world of [1, 2, 3] as const) {
     for (const level of [1, 2, 3] as const) {
       const bricks = buildLevelBricks(world, level);
@@ -147,5 +171,7 @@ test('Worlds and levels generate valid destructible and boss configurations', ()
     }
     const boss = createBossForWorld(world);
     assert.ok(boss.maxHp >= 18);
+    // Boss top arc spheres extend 26.5px above boss.y; verify they remain inside top arena border (y >= 64)
+    assert.ok(boss.y - 26.5 >= 64);
   }
 });

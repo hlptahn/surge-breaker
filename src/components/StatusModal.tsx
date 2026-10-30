@@ -50,24 +50,27 @@ export const StatusModal: React.FC<StatusModalProps> = ({
     const worldMeta = WORLDS[currentWorld];
     return (
       <div
-        className="fixed inset-0 z-30 flex items-center justify-center p-4 bg-[#050810]/85"
+        className="fixed inset-0 z-30 overflow-y-auto flex p-2 sm:p-4 bg-[#050810]/85"
         role="dialog"
         aria-modal="true"
         aria-labelledby="pause-modal-title"
       >
-        <div className="w-full max-w-lg bg-[#0b111e] border-2 border-[#ff6b00] p-6 md:p-8 shadow-[0_0_45px_rgba(255,107,0,0.3)] text-center">
-          <div className="font-mono-tabular text-xs font-bold uppercase tracking-widest text-[#00e5ff] mb-1">
+        <div className="m-auto w-full max-w-lg bg-[#0b111e] border-2 border-[#ff6b00] p-5 md:p-8 [@media(max-height:480px)]:p-3.5 shadow-[0_0_45px_rgba(255,107,0,0.3)] text-center">
+          <div className="font-mono-tabular text-xs [@media(max-height:480px)]:text-[10px] font-bold uppercase tracking-widest text-[#00e5ff] mb-1 [@media(max-height:480px)]:mb-0.5">
             WORLD {currentWorld}-{currentLevel === 4 ? 'BOSS' : currentLevel} &middot; {worldMeta.name}
           </div>
-          <h2 id="pause-modal-title" className="font-pixel text-xl md:text-2xl text-white mb-6">
+          <h2
+            id="pause-modal-title"
+            className="font-pixel text-xl md:text-2xl [@media(max-height:480px)]:text-base text-white mb-5 [@media(max-height:480px)]:mb-2.5"
+          >
             SYSTEM PAUSED
           </h2>
 
-          <div className="flex flex-col gap-3 mb-6">
+          <div className="flex flex-col gap-2.5 [@media(max-height:480px)]:gap-1.5 mb-5 [@media(max-height:480px)]:mb-2.5">
             <button
               type="button"
               onClick={onResume}
-              className="w-full py-3 bg-[#ff6b00] hover:bg-[#ff8524] text-[#090d16] font-pixel text-sm tracking-wider border-2 border-white cursor-pointer"
+              className="w-full py-3 [@media(max-height:480px)]:py-2 bg-[#ff6b00] hover:bg-[#ff8524] text-[#090d16] font-pixel text-sm [@media(max-height:480px)]:text-xs tracking-wider border-2 border-white cursor-pointer"
             >
               RESUME GAME [P]
             </button>
@@ -75,23 +78,23 @@ export const StatusModal: React.FC<StatusModalProps> = ({
             <button
               type="button"
               onClick={onRestartRun}
-              className="w-full py-2.5 bg-[#111927] hover:border-[#ff6b00] text-white font-mono-tabular text-sm font-bold border-2 border-slate-700 cursor-pointer"
+              className="w-full py-2.5 [@media(max-height:480px)]:py-1.5 bg-[#111927] hover:border-[#ff6b00] text-white font-mono-tabular text-sm [@media(max-height:480px)]:text-xs font-bold border-2 border-slate-700 cursor-pointer"
             >
               RESTART NEW RUN
             </button>
 
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-3 gap-2 [@media(max-height:480px)]:gap-1.5">
               <button
                 type="button"
                 onClick={onToggleMute}
-                className="py-2 px-2 bg-[#111927] hover:border-[#00e5ff] text-slate-200 font-mono-tabular text-xs font-bold border-2 border-slate-700 cursor-pointer whitespace-nowrap"
+                className="py-2 px-2 [@media(max-height:480px)]:py-1.5 bg-[#111927] hover:border-[#00e5ff] text-slate-200 font-mono-tabular text-xs [@media(max-height:480px)]:text-[10px] font-bold border-2 border-slate-700 cursor-pointer whitespace-nowrap"
               >
                 {muted ? 'SOUND: OFF [M]' : 'SOUND: ON [M]'}
               </button>
               <button
                 type="button"
                 onClick={onToggleCrt}
-                className="py-2 px-2 bg-[#111927] hover:border-[#00e5ff] text-slate-200 font-mono-tabular text-xs font-bold border-2 border-slate-700 cursor-pointer whitespace-nowrap"
+                className="py-2 px-2 [@media(max-height:480px)]:py-1.5 bg-[#111927] hover:border-[#00e5ff] text-slate-200 font-mono-tabular text-xs [@media(max-height:480px)]:text-[10px] font-bold border-2 border-slate-700 cursor-pointer whitespace-nowrap"
               >
                 {crtEnabled ? 'CRT: ON [C]' : 'CRT: OFF [C]'}
               </button>
@@ -99,7 +102,7 @@ export const StatusModal: React.FC<StatusModalProps> = ({
                 type="button"
                 data-testid="modal-toggle-reduce-flash"
                 onClick={onToggleReduceFlash}
-                className="py-2 px-2 bg-[#111927] hover:border-[#ffb703] text-slate-200 font-mono-tabular text-xs font-bold border-2 border-slate-700 cursor-pointer whitespace-nowrap"
+                className="py-2 px-2 [@media(max-height:480px)]:py-1.5 bg-[#111927] hover:border-[#ffb703] text-slate-200 font-mono-tabular text-xs [@media(max-height:480px)]:text-[10px] font-bold border-2 border-slate-700 cursor-pointer whitespace-nowrap"
               >
                 {reduceFlash ? 'REDUCE FLASH: ON [F]' : 'REDUCE FLASH: OFF [F]'}
               </button>
@@ -108,11 +111,14 @@ export const StatusModal: React.FC<StatusModalProps> = ({
 
           {/* Stage Jump Grid — ONLY rendered when ?debug=1 is present */}
           {debugMode && (
-            <div className="border-t border-slate-800 pt-4 mb-5 text-left" data-testid="debug-stage-jump">
-              <div className="text-[11px] font-mono-tabular uppercase tracking-wider text-slate-400 mb-2 text-center">
+            <div
+              className="border-t border-slate-800 pt-3 mb-4 [@media(max-height:480px)]:pt-2 [@media(max-height:480px)]:mb-2 text-left"
+              data-testid="debug-stage-jump"
+            >
+              <div className="text-[11px] [@media(max-height:480px)]:text-[10px] font-mono-tabular uppercase tracking-wider text-slate-400 mb-2 [@media(max-height:480px)]:mb-1 text-center">
                 JUMP TO SUBSTATION STAGE / BOSS
               </div>
-              <div className="grid grid-cols-4 gap-1.5">
+              <div className="grid grid-cols-4 gap-1.5 [@media(max-height:480px)]:gap-1">
                 {([1, 2, 3] as const).map((w) =>
                   ([1, 2, 3, 4] as const).map((lvl) => {
                     const active = w === currentWorld && lvl === currentLevel;
@@ -121,7 +127,7 @@ export const StatusModal: React.FC<StatusModalProps> = ({
                         key={`${w}-${lvl}`}
                         type="button"
                         onClick={() => onSelectStage(w, lvl)}
-                        className={`py-1.5 px-2 text-[11px] font-mono-tabular font-bold border cursor-pointer transition-colors ${
+                        className={`py-1.5 px-2 [@media(max-height:480px)]:py-1 text-[11px] [@media(max-height:480px)]:text-[10px] font-mono-tabular font-bold border cursor-pointer transition-colors ${
                           active
                             ? 'bg-[#ff6b00] text-[#090d16] border-white'
                             : 'bg-[#090d16] text-slate-300 border-slate-800 hover:border-[#00e5ff]'
@@ -139,7 +145,7 @@ export const StatusModal: React.FC<StatusModalProps> = ({
           <button
             type="button"
             onClick={onReturnTitle}
-            className="w-full py-2 text-xs font-mono-tabular font-bold text-slate-400 hover:text-white cursor-pointer"
+            className="w-full py-2 [@media(max-height:480px)]:py-1 text-xs [@media(max-height:480px)]:text-[11px] font-mono-tabular font-bold text-slate-400 hover:text-white cursor-pointer"
           >
             RETURN TO TITLE SCREEN
           </button>
@@ -158,62 +164,62 @@ export const StatusModal: React.FC<StatusModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-30 flex items-center justify-center p-4 bg-[#050810]/88"
+      className="fixed inset-0 z-30 overflow-y-auto flex p-2 sm:p-4 bg-[#050810]/88"
       role="dialog"
       aria-modal="true"
       aria-labelledby="outcome-modal-title"
     >
       <div
-        className={`w-full max-w-xl bg-[#0b111e] border-2 p-6 md:p-8 text-center ${
+        className={`m-auto w-full max-w-xl bg-[#0b111e] border-2 p-5 md:p-8 [@media(max-height:480px)]:p-3.5 text-center ${
           isVictory
             ? 'border-[#00e5ff] shadow-[0_0_50px_rgba(0,229,255,0.35)]'
             : 'border-[#ff6b00] shadow-[0_0_50px_rgba(255,107,0,0.35)]'
         }`}
       >
-        <div className="font-mono-tabular text-xs font-bold uppercase tracking-widest text-[#ffb703] mb-2">
+        <div className="font-mono-tabular text-xs [@media(max-height:480px)]:text-[10px] font-bold uppercase tracking-widest text-[#ffb703] mb-1.5 [@media(max-height:480px)]:mb-0.5">
           {isVictory ? 'AUSTRALIAN GRID RESTORED · 30 YEARS OF FUSECO' : 'OVERCURRENT PROTECTION TRIPPED'}
         </div>
 
         <h2
           id="outcome-modal-title"
-          className={`font-pixel text-xl md:text-3xl mb-3 ${
+          className={`font-pixel text-xl md:text-3xl [@media(max-height:480px)]:text-lg mb-2.5 [@media(max-height:480px)]:mb-1 ${
             isVictory ? 'text-[#00e5ff]' : 'text-[#ff6b00]'
           }`}
         >
           {isVictory ? 'VICTORY!' : 'GAME OVER'}
         </h2>
 
-        <p className="font-display text-base md:text-lg font-bold text-white mb-6">
+        <p className="font-display text-base md:text-lg [@media(max-height:480px)]:text-sm font-bold text-white mb-5 [@media(max-height:480px)]:mb-2">
           {isVictory
             ? 'The lights are on. Thanks for keeping Australia powered!'
             : 'Fuse blown! Need a fuse urgently?'}
         </p>
 
         {/* 3 Tabular Stat Tiles */}
-        <div className="grid grid-cols-3 gap-3 mb-6">
-          <div className="bg-[#090d16] border border-slate-800 p-3">
-            <div className="text-[10px] font-mono-tabular uppercase text-slate-400 mb-1">
+        <div className="grid grid-cols-3 gap-3 [@media(max-height:480px)]:gap-2 mb-5 [@media(max-height:480px)]:mb-2.5">
+          <div className="bg-[#090d16] border border-slate-800 p-3 [@media(max-height:480px)]:p-2">
+            <div className="text-[10px] [@media(max-height:480px)]:text-[9px] font-mono-tabular uppercase text-slate-400 mb-1 [@media(max-height:480px)]:mb-0.5">
               FINAL SCORE
             </div>
-            <div className="font-pixel text-sm md:text-base text-white font-mono-tabular" data-testid="final-score">
+            <div className="font-pixel text-sm md:text-base [@media(max-height:480px)]:text-xs text-white font-mono-tabular" data-testid="final-score">
               {score.toString().padStart(6, '0')}
             </div>
           </div>
 
-          <div className="bg-[#090d16] border border-slate-800 p-3">
-            <div className="text-[10px] font-mono-tabular uppercase text-slate-400 mb-1">
+          <div className="bg-[#090d16] border border-slate-800 p-3 [@media(max-height:480px)]:p-2">
+            <div className="text-[10px] [@media(max-height:480px)]:text-[9px] font-mono-tabular uppercase text-slate-400 mb-1 [@media(max-height:480px)]:mb-0.5">
               HIGH SCORE
             </div>
-            <div className="font-pixel text-sm md:text-base text-[#ffb703] font-mono-tabular" data-testid="final-highscore">
+            <div className="font-pixel text-sm md:text-base [@media(max-height:480px)]:text-xs text-[#ffb703] font-mono-tabular" data-testid="final-highscore">
               {highScore.toString().padStart(6, '0')}
             </div>
           </div>
 
-          <div className="bg-[#090d16] border border-slate-800 p-3">
-            <div className="text-[10px] font-mono-tabular uppercase text-slate-400 mb-1">
+          <div className="bg-[#090d16] border border-slate-800 p-3 [@media(max-height:480px)]:p-2">
+            <div className="text-[10px] [@media(max-height:480px)]:text-[9px] font-mono-tabular uppercase text-slate-400 mb-1 [@media(max-height:480px)]:mb-0.5">
               {isVictory ? 'PEAK PF' : 'STAGE REACHED'}
             </div>
-            <div className="font-pixel text-xs md:text-sm text-[#00e5ff] font-mono-tabular">
+            <div className="font-pixel text-xs md:text-sm [@media(max-height:480px)]:text-xs text-[#00e5ff] font-mono-tabular">
               {isVictory
                 ? `${peakPf} PF`
                 : `W${worldReached}-${levelReached === 4 ? 'BOSS' : levelReached}`}
@@ -222,12 +228,12 @@ export const StatusModal: React.FC<StatusModalProps> = ({
         </div>
 
         {/* Primary Play Again / Try Again Button */}
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mb-6">
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-3 [@media(max-height:480px)]:gap-2 mb-5 [@media(max-height:480px)]:mb-2.5">
           <button
             type="button"
             data-start="true"
             onClick={onRestartRun}
-            className="w-full sm:w-auto px-8 py-3.5 bg-[#ff6b00] hover:bg-[#ff8524] text-[#090d16] font-pixel text-sm tracking-wider border-2 border-white cursor-pointer"
+            className="w-full sm:w-auto px-8 py-3.5 [@media(max-height:480px)]:px-5 [@media(max-height:480px)]:py-2 bg-[#ff6b00] hover:bg-[#ff8524] text-[#090d16] font-pixel text-sm [@media(max-height:480px)]:text-xs tracking-wider border-2 border-white cursor-pointer"
           >
             {isVictory ? 'PLAY AGAIN' : 'TRY AGAIN'}
           </button>
@@ -235,14 +241,14 @@ export const StatusModal: React.FC<StatusModalProps> = ({
           <button
             type="button"
             onClick={onReturnTitle}
-            className="w-full sm:w-auto px-6 py-3.5 bg-[#111927] hover:border-[#00e5ff] text-slate-200 font-mono-tabular text-xs font-bold border-2 border-slate-700 cursor-pointer"
+            className="w-full sm:w-auto px-6 py-3.5 [@media(max-height:480px)]:px-4 [@media(max-height:480px)]:py-2 bg-[#111927] hover:border-[#00e5ff] text-slate-200 font-mono-tabular text-xs font-bold border-2 border-slate-700 cursor-pointer"
           >
             TITLE SCREEN
           </button>
         </div>
 
         {/* Fuseco Call To Action */}
-        <div className="border-t border-slate-800 pt-4 text-xs md:text-sm font-mono-tabular text-amber-300 font-bold">
+        <div className="border-t border-slate-800 pt-3 [@media(max-height:480px)]:pt-2 text-xs md:text-sm [@media(max-height:480px)]:text-[11px] font-mono-tabular text-amber-300 font-bold">
           Talk to a Fuseco expert: 1300 387 326 |{' '}
           <a
             href="https://www.fuseco.com.au"

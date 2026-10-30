@@ -26,9 +26,11 @@ import {
   calculatePowerFactor,
   calculateBrickScore,
   evaluatePaddleCatch,
+  getCentreCatchMessage,
   stepPassiveCooling,
   isHighHeatWarning,
   checkExtraLifeMilestone,
+  getExtraLifeMilestoneMessage,
   applyExtraLifeReward,
   selectPowerUpFromRoll,
   testBallVsAABB,
@@ -655,7 +657,7 @@ export default function App() {
             spawnFloatingText(
               s.paddleX,
               PADDLE_Y - 42,
-              '25,000 PTS · +1 FUSE LIFE!',
+              getExtraLifeMilestoneMessage(s.score),
               '#facc15',
               1.25
             );
@@ -688,9 +690,12 @@ export default function App() {
     const collectPowerUpCapsule = (
       s: InternalSimState,
       pu: FallingPowerUp,
-      isClearSweep: boolean = false
+      isClearSweep: boolean = false,
+      playSound: boolean = true
     ) => {
-      soundEngine.playPowerUp(pu.type);
+      if (playSound) {
+        soundEngine.playPowerUp(pu.type);
+      }
       const meta = POWERUP_CATALOG[pu.type];
       addScore(s, 250);
 
@@ -731,8 +736,10 @@ export default function App() {
 
     const collectAllFallingPowerUpsOnClear = (s: InternalSimState) => {
       if (s.powerUps.length === 0) return;
+      // Play a single pick-up sound for the whole sweep so it doesn't clash with the level-clear jingle
+      soundEngine.playPowerUp(s.powerUps[0].type);
       for (let i = 0; i < s.powerUps.length; i++) {
-        collectPowerUpCapsule(s, s.powerUps[i], true);
+        collectPowerUpCapsule(s, s.powerUps[i], true, false);
       }
       s.powerUps = [];
     };
@@ -1123,11 +1130,8 @@ export default function App() {
           soundEngine.playPaddleHit(catchRes.zone);
           if (catchRes.zone === 'centre') {
             spawnParticleBurst(s.ballX, PADDLE_Y, 8, ['#00e5ff', '#e0f2fe']);
-            const label =
-              catchRes.comboHeatAdded > 0
-                ? `COOL CATCH (${catchRes.heatDelta > 0 ? '+' : ''}${catchRes.heatDelta}% HEAT)`
-                : 'CENTRE COOL -3% HEAT';
-            spawnFloatingText(s.ballX, PADDLE_Y - 18, label, '#00e5ff', 0.95);
+            const msg = getCentreCatchMessage(catchRes.heatDelta);
+            spawnFloatingText(s.ballX, PADDLE_Y - 18, msg.text, msg.color, 0.95);
           } else {
             spawnParticleBurst(s.ballX, PADDLE_Y, 12, ['#ff6b00', '#fde047']);
             spawnFloatingText(
@@ -1550,12 +1554,12 @@ export default function App() {
 
   return (
     <main
-      className={`relative w-screen h-screen overflow-hidden bg-[#090d16] flex items-center justify-center select-none touch-none ${
+      className={`relative w-screen h-screen overflow-hidden bg-[#090d16] flex items-center justify-center select-none ${
         reduceFlash ? 'reduce-flash' : ''
       }`}
     >
       {/* Isolated Full-Viewport Responsive Game Canvas Container */}
-      <div className="relative w-full h-full flex items-center justify-center touch-none">
+      <div className="relative w-full h-full flex items-center justify-center pt-2 pb-4 [@media(max-height:480px)]:pt-6 [@media(max-height:480px)]:pb-3.5">
         <canvas
           ref={canvasRef}
           width={ARENA_WIDTH}

@@ -2,7 +2,5 @@
   "name": "SURGE BREAKER — Fuseco 30th Anniversary Arcade",
   "description": "A retro pixel-art Breakout arcade game celebrating 30 years of Fuseco (1996–2026). Play as a glass cartridge fuse, manage your Heat Meter, build Power Factor combos, and restore power across Australia.",
   "requestFramePermissions": [],
-  "majorCapabilities": [
-    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
-  ]
+  "majorCapabilities": []
 }

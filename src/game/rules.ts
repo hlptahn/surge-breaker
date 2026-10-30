@@ -377,6 +377,24 @@ export function evaluatePaddleCatch(
 }
 
 /**
+ * Returns the floating text message and colour for a centre-third paddle catch:
+ * - Heat goes down (heatDelta < 0): "CENTRE COOL -X% HEAT" in cyan (#00e5ff)
+ * - Heat goes up or stays flat due to combo (heatDelta >= 0): "COMBO HEAT +X%" in amber (#ffb703)
+ */
+export function getCentreCatchMessage(heatDelta: number): { text: string; color: string } {
+  if (heatDelta < 0) {
+    return {
+      text: `CENTRE COOL -${Math.abs(heatDelta)}% HEAT`,
+      color: '#00e5ff',
+    };
+  }
+  return {
+    text: `COMBO HEAT +${heatDelta}%`,
+    color: '#ffb703',
+  };
+}
+
+/**
  * Passive heat cooling over time:
  * - Cools at -1% per second when strictly below 80%
  * - Does not cool passively at or above 80% (critical thermal runaway zone!)
@@ -402,6 +420,16 @@ export function checkExtraLifeMilestone(prevScore: number, newScore: number): nu
   const prevMilestone = Math.floor(prevScore / EXTRA_LIFE_MILESTONE_POINTS);
   const newMilestone = Math.floor(newScore / EXTRA_LIFE_MILESTONE_POINTS);
   return Math.max(0, newMilestone - prevMilestone);
+}
+
+/**
+ * Formats the floating milestone message with the actual score milestone reached
+ * (e.g. "25,000 PTS · +1 FUSE LIFE!", "50,000 PTS · +1 FUSE LIFE!", "75,000 PTS · +1 FUSE LIFE!").
+ */
+export function getExtraLifeMilestoneMessage(newScore: number): string {
+  const milestoneReached =
+    Math.floor(newScore / EXTRA_LIFE_MILESTONE_POINTS) * EXTRA_LIFE_MILESTONE_POINTS;
+  return `${milestoneReached.toLocaleString('en-US')} PTS · +1 FUSE LIFE!`;
 }
 
 export interface ExtraLifeRewardResult {
@@ -584,6 +612,8 @@ export function testBallVsAABB(
 
 /**
  * Creates a Boss entity for the given world (used on Level 4 of each World).
+ * Positioned at y = 96 so top bushings and arc spheres stay strictly below the y = 64 arena border,
+ * while keeping the exact same hit area (width & height).
  */
 export function createBossForWorld(world: 1 | 2 | 3): BossEntity {
   const worldMeta = WORLDS[world];
@@ -592,7 +622,7 @@ export function createBossForWorld(world: 1 | 2 | 3): BossEntity {
       world: 1,
       name: worldMeta.bossName,
       x: ARENA_WIDTH / 2 - 120,
-      y: 88,
+      y: 96,
       width: 240,
       height: 82,
       hp: 18,
@@ -610,7 +640,7 @@ export function createBossForWorld(world: 1 | 2 | 3): BossEntity {
       world: 2,
       name: worldMeta.bossName,
       x: ARENA_WIDTH / 2 - 145,
-      y: 88,
+      y: 96,
       width: 290,
       height: 90,
       hp: 26,
@@ -627,7 +657,7 @@ export function createBossForWorld(world: 1 | 2 | 3): BossEntity {
     world: 3,
     name: worldMeta.bossName,
     x: ARENA_WIDTH / 2 - 170,
-    y: 88,
+    y: 96,
     width: 340,
     height: 96,
     hp: 36,
