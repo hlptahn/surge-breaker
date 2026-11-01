@@ -12,14 +12,24 @@ import {
   getExtraLifeMilestoneMessage,
   applyExtraLifeReward,
   selectPowerUpFromRoll,
+  splitBallsForParallel,
+  shouldResetComboOnPaddleCatch,
+  evaluateBallLost,
+  getFusecoExpertContactUrl,
+  FUSECO_EXPERT_CONTACT_BASE_URL,
+  FUSECO_EXPERT_SHORT_URL,
   getStartingBallSpeed,
   MAX_LIVES,
   MAX_LIVES_BONUS_POINTS,
+  MAX_BALLS,
+  PARALLEL_SPLIT_ANGLE_DEG,
+  SurgeBallState,
   testBallVsAABB,
   buildLevelBricks,
   isRegularLevelCleared,
   createBossForWorld,
 } from './rules';
+import { generateQrMatrix } from './qrcode';
 
 test('Power Factor starts at 0.70 and climbs to 0.99 with combo', () => {
   assert.equal(calculatePowerFactor(0), 0.70);
@@ -127,16 +137,159 @@ test('Lives are capped at 6 and extra life rewards at cap grant +2,500 bonus poi
   assert.equal(mixed.bonusPoints, 2500);
 });
 
-test('After-Hours Call-Out drop rate is 3% normally and 5% on last life', () => {
-  // Normal lives (3): < 0.03 is AFTER_HOURS, >= 0.03 is COOLING / HIGHER_AMP / CIRCUIT_BREAKER
+test('Power-up drop mix keeps After-Hours at 3%/5%, gives Parallel Circuit 15%, and weights Cooling higher above 55% heat', () => {
+  // Normal lives (3), low heat (20):
+  // [0, 0.03) -> AFTER_HOURS (3%)
+  // [0.03, 0.18) -> PARALLEL_CIRCUIT (15%)
+  // [0.18, 0.48) -> COOLING (30%, down 5% from 35%)
+  // [0.48, 0.75) -> HIGHER_AMP (27%, down 5% from 32%)
+  // [0.75, 1.0] -> CIRCUIT_BREAKER (25%, down 5% from 30%)
+  assert.equal(selectPowerUpFromRoll(0.0, 20, 3), 'AFTER_HOURS');
   assert.equal(selectPowerUpFromRoll(0.029, 20, 3), 'AFTER_HOURS');
-  assert.equal(selectPowerUpFromRoll(0.031, 20, 3), 'COOLING');
-  assert.equal(selectPowerUpFromRoll(0.39, 20, 3), 'HIGHER_AMP');
-  assert.equal(selectPowerUpFromRoll(0.71, 20, 3), 'CIRCUIT_BREAKER');
+  assert.equal(selectPowerUpFromRoll(0.031, 20, 3), 'PARALLEL_CIRCUIT');
+  assert.equal(selectPowerUpFromRoll(0.179, 20, 3), 'PARALLEL_CIRCUIT');
+  assert.equal(selectPowerUpFromRoll(0.181, 20, 3), 'COOLING');
+  assert.equal(selectPowerUpFromRoll(0.479, 20, 3), 'COOLING');
+  assert.equal(selectPowerUpFromRoll(0.481, 20, 3), 'HIGHER_AMP');
+  assert.equal(selectPowerUpFromRoll(0.749, 20, 3), 'HIGHER_AMP');
+  assert.equal(selectPowerUpFromRoll(0.751, 20, 3), 'CIRCUIT_BREAKER');
+  assert.equal(selectPowerUpFromRoll(0.999, 20, 3), 'CIRCUIT_BREAKER');
 
-  // Last life (1): < 0.05 is AFTER_HOURS, >= 0.05 is COOLING
+  // Last life (1), low heat (20):
+  // [0, 0.05) -> AFTER_HOURS (5%)
+  // [0.05, 0.20) -> PARALLEL_CIRCUIT (15%)
+  // [0.20, 0.46) -> COOLING (26%, down 5% from 31%)
+  // [0.46, 0.74) -> HIGHER_AMP (28%, down 5% from 33%)
+  // [0.74, 1.0] -> CIRCUIT_BREAKER (26%, down 5% from 31%)
   assert.equal(selectPowerUpFromRoll(0.049, 20, 1), 'AFTER_HOURS');
-  assert.equal(selectPowerUpFromRoll(0.051, 20, 1), 'COOLING');
+  assert.equal(selectPowerUpFromRoll(0.051, 20, 1), 'PARALLEL_CIRCUIT');
+  assert.equal(selectPowerUpFromRoll(0.199, 20, 1), 'PARALLEL_CIRCUIT');
+  assert.equal(selectPowerUpFromRoll(0.201, 20, 1), 'COOLING');
+  assert.equal(selectPowerUpFromRoll(0.459, 20, 1), 'COOLING');
+  assert.equal(selectPowerUpFromRoll(0.461, 20, 1), 'HIGHER_AMP');
+  assert.equal(selectPowerUpFromRoll(0.739, 20, 1), 'HIGHER_AMP');
+  assert.equal(selectPowerUpFromRoll(0.741, 20, 1), 'CIRCUIT_BREAKER');
+
+  // High heat (> 55) boosts COOLING share above normal 0.48 threshold (up to 0.51):
+  assert.equal(selectPowerUpFromRoll(0.495, 20, 3), 'HIGHER_AMP');
+  assert.equal(selectPowerUpFromRoll(0.495, 75, 3), 'COOLING');
+});
+
+test('Parallel Circuit splits the ball closest to the paddle by ±20 degrees and caps at 5 balls', () => {
+  assert.equal(MAX_BALLS, 5);
+  assert.equal(PARALLEL_SPLIT_ANGLE_DEG, 20);
+
+  const initialBalls: SurgeBallState[] = [
+    {
+      id: 1,
+      x: 200,
+      y: 150, // far from paddle
+      vx: 0,
+      vy: -400,
+      trail: [],
+      colorVariant: 'cyan',
+    },
+    {
+      id: 2,
+      x: 480,
+      y: 500, // closest to paddle (480, 668)
+      vx: 0,
+      vy: -400, // heading straight up (angle -90 deg)
+      trail: [{ x: 480, y: 510 }],
+      colorVariant: 'orange',
+    },
+  ];
+
+  // Splitting from 2 balls adds 2 balls -> 4 balls total
+  const res1 = splitBallsForParallel(initialBalls, 480, 668, 400, 3);
+  assert.equal(res1.addedCount, 2);
+  assert.equal(res1.balls.length, 4);
+  assert.equal(res1.nextBallId, 5);
+
+  const newBallA = res1.balls[2];
+  const newBallB = res1.balls[3];
+  // Spawned at the closest ball's position (480, 500)
+  assert.equal(newBallA.x, 480);
+  assert.equal(newBallA.y, 500);
+  assert.equal(newBallB.x, 480);
+  assert.equal(newBallB.y, 500);
+
+  // Same speed (400) and ±20 deg around -90 deg
+  const speedA = Math.hypot(newBallA.vx, newBallA.vy);
+  const speedB = Math.hypot(newBallB.vx, newBallB.vy);
+  assert.ok(Math.abs(speedA - 400) < 1e-6);
+  assert.ok(Math.abs(speedB - 400) < 1e-6);
+
+  const baseAngle = Math.atan2(-400, 0);
+  const angleA = Math.atan2(newBallA.vy, newBallA.vx);
+  const angleB = Math.atan2(newBallB.vy, newBallB.vx);
+  const rad20 = (20 * Math.PI) / 180;
+  assert.ok(Math.abs(angleA - (baseAngle - rad20)) < 1e-6);
+  assert.ok(Math.abs(angleB - (baseAngle + rad20)) < 1e-6);
+
+  // Splitting again from 4 balls only has room for 1 more ball (cap at 5)
+  const res2 = splitBallsForParallel(res1.balls, 480, 668, 400, res1.nextBallId);
+  assert.equal(res2.addedCount, 1);
+  assert.equal(res2.balls.length, 5);
+
+  // Splitting at the 5-ball cap adds 0 balls
+  const res3 = splitBallsForParallel(res2.balls, 480, 668, 400, res2.nextBallId);
+  assert.equal(res3.addedCount, 0);
+  assert.equal(res3.balls.length, 5);
+});
+
+test('A life is lost only when the last ball is lost, and shared combo resets properly', () => {
+  // Paddle catch combo reset rule: resets ONLY when 1 ball is in play
+  assert.equal(shouldResetComboOnPaddleCatch(3), false);
+  assert.equal(shouldResetComboOnPaddleCatch(2), false);
+  assert.equal(shouldResetComboOnPaddleCatch(1), true);
+
+  // Ball lost while 2 other balls remain in play: no life lost, combo resets
+  const stillInPlay = evaluateBallLost(2, 3);
+  assert.equal(stillInPlay.lifeLost, false);
+  assert.equal(stillInPlay.newLives, 3);
+  assert.equal(stillInPlay.resetCombo, true);
+
+  // Ball lost while 1 other ball remains in play: no life lost, combo resets
+  const oneLeft = evaluateBallLost(1, 3);
+  assert.equal(oneLeft.lifeLost, false);
+  assert.equal(oneLeft.newLives, 3);
+  assert.equal(oneLeft.resetCombo, true);
+
+  // Last ball lost (0 remaining): life is lost!
+  const lastLost = evaluateBallLost(0, 3);
+  assert.equal(lastLost.lifeLost, true);
+  assert.equal(lastLost.newLives, 2);
+  assert.equal(lastLost.resetCombo, true);
+});
+
+test('QR code contact URLs and offline QR matrix match Victory and Game Over outcomes', () => {
+  assert.equal(FUSECO_EXPERT_CONTACT_BASE_URL, 'https://www.fuseco.com.au/contact-us');
+  assert.equal(FUSECO_EXPERT_SHORT_URL, 'fuseco.com.au/contact-us');
+
+  const victoryUrl = getFusecoExpertContactUrl('victory');
+  const gameOverUrl = getFusecoExpertContactUrl('defeat');
+
+  assert.equal(
+    victoryUrl,
+    'https://www.fuseco.com.au/contact-us?utm_source=surge-breaker&utm_medium=arcade-game&utm_campaign=30-years&utm_content=victory'
+  );
+  assert.equal(
+    gameOverUrl,
+    'https://www.fuseco.com.au/contact-us?utm_source=surge-breaker&utm_medium=arcade-game&utm_campaign=30-years&utm_content=gameover'
+  );
+
+  // Offline QR matrix generates a valid square matrix with intact 7x7 finder patterns
+  for (const url of [victoryUrl, gameOverUrl]) {
+    const matrix = generateQrMatrix(url);
+    assert.ok(matrix.length >= 21);
+    assert.equal(matrix.length, matrix[0].length);
+    // Top-left finder outer corner & center (3,3) must be dark (true)
+    assert.equal(matrix[0][0], true);
+    assert.equal(matrix[3][3], true);
+    // Top-left finder inner ring (1,1) must be light (false)
+    assert.equal(matrix[1][1], false);
+  }
 });
 
 test('Starting ball speed scales cleanly by world and level', () => {
@@ -175,3 +328,4 @@ test('Worlds and levels generate valid destructible and boss configurations with
     assert.ok(boss.y - 26.5 >= 64);
   }
 });
+

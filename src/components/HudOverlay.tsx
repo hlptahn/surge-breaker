@@ -14,6 +14,7 @@ export interface HudSnapshot {
   ampTimer: number;
   shieldHits: number;
   ballLaunched: boolean;
+  activeBalls: number;
   perfectPfFlash: boolean;
   flavourText: string | null;
   levelClearBanner: string | null;
@@ -81,7 +82,7 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
             </div>
           </div>
 
-          {/* Fuse Lives Pips (fits up to 6 icons comfortably) + Amp Rating Badge */}
+          {/* Fuse Lives Pips (fits up to 6 icons comfortably) + Multi-ball Badge + Amp Rating Badge */}
           <div className="flex items-center justify-between gap-1 mt-1 [@media(max-height:480px)]:mt-0.5 pt-1 [@media(max-height:480px)]:pt-0.5 border-t border-slate-800">
             <div
               className="flex items-center gap-0.5 sm:gap-1 min-w-0"
@@ -114,9 +115,19 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
               })}
             </div>
 
-            <div className="text-[10px] sm:text-[11px] font-mono-tabular font-bold text-[#00e5ff] shrink-0 whitespace-nowrap">
-              {AMP_LEVEL_LABELS[Math.min(3, hud.ampLevel)]}
-              {hud.ampLevel > 0 && hud.ampTimer > 0 ? ` (${Math.ceil(hud.ampTimer)}s)` : ''}
+            <div className="flex items-center gap-1.5 shrink-0">
+              {hud.activeBalls > 1 && (
+                <span
+                  className="px-1 bg-[#a3e635]/15 border border-[#a3e635] text-[#a3e635] text-[9px] sm:text-[10px] font-mono-tabular font-bold leading-none whitespace-nowrap"
+                  data-testid="hud-surges-badge"
+                >
+                  SURGES x{hud.activeBalls}
+                </span>
+              )}
+              <div className="text-[10px] sm:text-[11px] font-mono-tabular font-bold text-[#00e5ff] shrink-0 whitespace-nowrap">
+                {AMP_LEVEL_LABELS[Math.min(3, hud.ampLevel)]}
+                {hud.ampLevel > 0 && hud.ampTimer > 0 ? ` (${Math.ceil(hud.ampTimer)}s)` : ''}
+              </div>
             </div>
           </div>
         </div>

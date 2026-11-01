@@ -432,21 +432,38 @@ export function drawFusePaddle(
 
 /**
  * Draws the crackling electrical surge ball and its spark trail.
+ * Extra balls alternate cyan and orange cores so they are easy to tell apart.
  */
 export function drawSurgeBall(
   ctx: CanvasRenderingContext2D,
   ballX: number,
   ballY: number,
   trail: TrailPoint[],
-  timeSec: number
+  timeSec: number,
+  colorVariant: 'cyan' | 'orange' = 'cyan'
 ): void {
+  const isOrange = colorVariant === 'orange';
+  const mainCoreColor = isOrange ? '#ff6b00' : '#00e5ff';
+  const spikeColor = isOrange ? '#a3e635' : '#ff6b00';
+  const innerCoreColor = isOrange ? '#fef08a' : '#ffffff';
+
   ctx.save();
 
   // 1. Electric trail
   for (let i = 0; i < trail.length; i++) {
     const pt = trail[i];
     const ratio = (i + 1) / (trail.length + 1);
-    ctx.fillStyle = i % 2 === 0 ? `rgba(0, 229, 255, ${ratio * 0.48})` : `rgba(255, 107, 0, ${ratio * 0.48})`;
+    if (isOrange) {
+      ctx.fillStyle =
+        i % 2 === 0
+          ? `rgba(255, 107, 0, ${ratio * 0.52})`
+          : `rgba(163, 230, 53, ${ratio * 0.48})`;
+    } else {
+      ctx.fillStyle =
+        i % 2 === 0
+          ? `rgba(0, 229, 255, ${ratio * 0.48})`
+          : `rgba(255, 107, 0, ${ratio * 0.48})`;
+    }
     const r = BALL_RADIUS * ratio * 0.85;
     ctx.beginPath();
     ctx.arc(pt.x, pt.y, r, 0, Math.PI * 2);
@@ -454,9 +471,9 @@ export function drawSurgeBall(
   }
 
   // 2. Outer crackling corona
-  ctx.shadowColor = '#00e5ff';
+  ctx.shadowColor = mainCoreColor;
   ctx.shadowBlur = 16;
-  ctx.strokeStyle = '#ff6b00';
+  ctx.strokeStyle = spikeColor;
   ctx.lineWidth = 2;
   const spikes = 6;
   ctx.beginPath();
@@ -469,12 +486,12 @@ export function drawSurgeBall(
   ctx.stroke();
 
   // 3. Bright surge core
-  ctx.fillStyle = '#00e5ff';
+  ctx.fillStyle = mainCoreColor;
   ctx.beginPath();
   ctx.arc(ballX, ballY, BALL_RADIUS, 0, Math.PI * 2);
   ctx.fill();
 
-  ctx.fillStyle = '#ffffff';
+  ctx.fillStyle = innerCoreColor;
   ctx.beginPath();
   ctx.arc(ballX, ballY, BALL_RADIUS * 0.55, 0, Math.PI * 2);
   ctx.fill();

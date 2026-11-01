@@ -22,6 +22,7 @@ import {
   BossEntity,
   BossZap,
   PowerUpType,
+  SurgeBallState,
   getStartingBallSpeed,
   calculatePowerFactor,
   calculateBrickScore,
@@ -33,6 +34,9 @@ import {
   getExtraLifeMilestoneMessage,
   applyExtraLifeReward,
   selectPowerUpFromRoll,
+  splitBallsForParallel,
+  shouldResetComboOnPaddleCatch,
+  evaluateBallLost,
   testBallVsAABB,
   buildLevelBricks,
   isRegularLevelCleared,
@@ -86,6 +90,8 @@ interface InternalSimState {
   ballSpeed: number;
   ballLaunched: boolean;
   ballTrail: TrailPoint[];
+  balls: SurgeBallState[];
+  nextBallId: number;
   bricks: BrickEntity[];
   boss: BossEntity | null;
   bossZaps: BossZap[];
@@ -109,10 +115,17 @@ interface InternalSimState {
 export default function App() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  // URL shortcuts (autostart, world, level) are ONLY active when ?debug=1 is present
+  // URL shortcuts (autostart, world, level, outcome, balls) are ONLY active when ?debug=1 is present
   const searchParams =
     typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
   const isDebugMode = searchParams?.get('debug') === '1';
+  const debugOutcomeParam = isDebugMode ? searchParams?.get('outcome') : null;
+  const initialDebugOutcome: 'victory' | 'defeat' | null =
+    debugOutcomeParam === 'victory'
+      ? 'victory'
+      : debugOutcomeParam === 'defeat'
+      ? 'defeat'
+      : null;
   const initialAutostart = isDebugMode && searchParams?.get('autostart') === '1';
   const paramWorld = isDebugMode ? Number(searchParams?.get('world') || 1) : 1;
   const initialWorld: 1 | 2 | 3 =
@@ -120,6 +133,9 @@ export default function App() {
   const paramLevel = isDebugMode ? Number(searchParams?.get('level') || 1) : 1;
   const initialLevel: 1 | 2 | 3 | 4 =
     paramLevel === 2 ? 2 : paramLevel === 3 ? 3 : paramLevel === 4 ? 4 : 1;
+  const initialDebugBalls = isDebugMode
+    ? Math.max(1, Math.min(5, Number(searchParams?.get('balls') || 1)))
+    : 1;
 
   const loadSavedHighScore = (): number => {
     try {
@@ -147,12 +163,26 @@ export default function App() {
     }
   };
 
-  const [gameState, setGameState] = useState<GameState>(initialAutostart ? 'playing' : 'title');
+  const [gameState, setGameState] = useState<GameState>(
+    initialDebugOutcome ? 'gameover' : initialAutostart ? 'playing' : 'title'
+  );
   const [muted, setMuted] = useState<boolean>(false);
   const [crtEnabled, setCrtEnabled] = useState<boolean>(true);
   const [reduceFlash, setReduceFlash] = useState<boolean>(() => loadInitialReduceFlash());
   const reduceFlashRef = useRef<boolean>(reduceFlash);
-  const [endStats, setEndStats] = useState<EndOfRunStats | null>(null);
+  const [endStats, setEndStats] = useState<EndOfRunStats | null>(() =>
+    initialDebugOutcome
+      ? {
+          outcome: initialDebugOutcome,
+          score: 42500,
+          highScore: 42500,
+          worldReached: initialDebugOutcome === 'victory' ? 3 : initialWorld,
+          levelReached: initialDebugOutcome === 'victory' ? 4 : initialLevel,
+          peakPowerFactor: 0.99,
+          livesRemaining: initialDebugOutcome === 'victory' ? 3 : 0,
+        }
+      : null
+  );
 
   const [hud, setHud] = useState<HudSnapshot>(() => ({
     score: 0,
@@ -166,7 +196,8 @@ export default function App() {
     ampLevel: 0,
     ampTimer: 0,
     shieldHits: 0,
-    ballLaunched: false,
+    ballLaunched: initialDebugBalls > 1,
+    activeBalls: initialDebugBalls,
     perfectPfFlash: false,
     flavourText: null,
     levelClearBanner: null,
@@ -211,7 +242,7 @@ export default function App() {
 
   // Main mutable simulation state
   const simRef = useRef<InternalSimState>({
-    mode: initialAutostart ? 'playing' : 'title',
+    mode: initialDebugOutcome ? 'gameover' : initialAutostart ? 'playing' : 'title',
     score: 0,
     highScore: typeof window !== 'undefined' ? loadSavedHighScore() : 0,
     lives: 3,
@@ -231,8 +262,21 @@ export default function App() {
     ballVx: 0,
     ballVy: 0,
     ballSpeed: getStartingBallSpeed(initialWorld, initialLevel),
-    ballLaunched: false,
+    ballLaunched: initialDebugBalls > 1,
     ballTrail: [],
+    balls:
+      initialDebugBalls > 1
+        ? Array.from({ length: initialDebugBalls }, (_, idx) => ({
+            id: idx + 1,
+            x: ARENA_WIDTH / 2 + (idx - 1) * 24,
+            y: PADDLE_Y - 120,
+            vx: (idx - 1) * 140,
+            vy: -410,
+            trail: [],
+            colorVariant: idx % 2 === 0 ? ('cyan' as const) : ('orange' as const),
+          }))
+        : [],
+    nextBallId: initialDebugBalls + 1,
     bricks: buildLevelBricks(initialWorld, initialLevel),
     boss: initialLevel === 4 ? createBossForWorld(initialWorld) : null,
     bossZaps: [],
@@ -328,6 +372,7 @@ export default function App() {
     const nextHighScore = Math.round(s.highScore);
     const nextHeat = Math.round(s.heat);
     const nextAmpTimer = Math.ceil(s.ampTimer);
+    const nextActiveBalls = s.ballLaunched ? Math.max(1, s.balls.length) : 1;
     const nextPerfectPf = s.perfectPfFlashTimer > 0;
     const nextFlavour = s.flavourTimer > 0 ? s.flavourText : null;
 
@@ -345,6 +390,7 @@ export default function App() {
         prev.ampTimer === nextAmpTimer &&
         prev.shieldHits === s.shieldHits &&
         prev.ballLaunched === s.ballLaunched &&
+        prev.activeBalls === nextActiveBalls &&
         prev.perfectPfFlash === nextPerfectPf &&
         prev.flavourText === nextFlavour &&
         prev.levelClearBanner === s.levelClearBanner
@@ -364,6 +410,7 @@ export default function App() {
         ampTimer: nextAmpTimer,
         shieldHits: s.shieldHits,
         ballLaunched: s.ballLaunched,
+        activeBalls: nextActiveBalls,
         perfectPfFlash: nextPerfectPf,
         flavourText: nextFlavour,
         levelClearBanner: s.levelClearBanner,
@@ -397,6 +444,8 @@ export default function App() {
       s.ballVx = 0;
       s.ballVy = 0;
       s.ballTrail = [];
+      s.balls = [];
+      s.nextBallId = 1;
       s.bricks = buildLevelBricks(world, level);
       s.boss = level === 4 ? createBossForWorld(world) : null;
       s.bossZaps = [];
@@ -420,8 +469,21 @@ export default function App() {
     }
     s.ballLaunched = true;
     const initialAngle = (Math.random() - 0.5) * 0.36; // slight upward angle
-    s.ballVx = Math.sin(initialAngle) * s.ballSpeed;
-    s.ballVy = -Math.cos(initialAngle) * s.ballSpeed;
+    const vx = Math.sin(initialAngle) * s.ballSpeed;
+    const vy = -Math.cos(initialAngle) * s.ballSpeed;
+    s.ballVx = vx;
+    s.ballVy = vy;
+    s.balls = [
+      {
+        id: s.nextBallId++,
+        x: s.paddleX,
+        y: PADDLE_Y - BALL_RADIUS - 2,
+        vx,
+        vy,
+        trail: [],
+        colorVariant: 'cyan',
+      },
+    ];
     soundEngine.playPaddleHit('centre');
     syncHudFromSim();
   }, [syncHudFromSim]);
@@ -600,9 +662,10 @@ export default function App() {
       s.combo = 0;
       s.powerFactor = 0.7;
       s.ballLaunched = false;
-      // Reset ball speed to this level's starting speed when a life is lost
+      // Reset ball speed to this level's starting speed and remove all balls when a life is lost
       s.ballSpeed = getStartingBallSpeed(s.world, s.level);
       s.ballTrail = [];
+      s.balls = [];
       s.bossZaps = [];
 
       if (isHeatBlow) {
@@ -623,7 +686,7 @@ export default function App() {
         );
         spawnFloatingText(s.paddleX, PADDLE_Y - 28, 'FUSE BLOWN! (100% HEAT)', '#ef4444', 1.25);
       } else {
-        // Ball dropped below bottom
+        // Last ball dropped below bottom
         soundEngine.playZapHitPlayer();
         s.screenShakeTrauma = 0.65;
         s.screenFlashAlpha = reduceFlashRef.current ? 0.15 : 0.45;
@@ -729,12 +792,48 @@ export default function App() {
           addScore(s, reward.bonusPoints);
           spawnFloatingText(textX, textY - 4, 'MAX FUSES · +2,500', '#facc15', 1.25);
         }
+      } else if (pu.type === 'PARALLEL_CIRCUIT') {
+        spawnFloatingText(textX, textY, 'PARALLEL CIRCUIT · x3!', '#a3e635', 1.2);
+        // During stage/boss clear sweep, only grant the +250 points (don't spawn extra balls)
+        if (!isClearSweep) {
+          if (!s.ballLaunched || s.balls.length === 0) {
+            s.ballLaunched = true;
+            const initialAngle = (Math.random() - 0.5) * 0.36;
+            const vx = Math.sin(initialAngle) * s.ballSpeed;
+            const vy = -Math.cos(initialAngle) * s.ballSpeed;
+            s.balls = [
+              {
+                id: s.nextBallId++,
+                x: s.paddleX,
+                y: PADDLE_Y - BALL_RADIUS - 2,
+                vx,
+                vy,
+                trail: [],
+                colorVariant: 'cyan',
+              },
+            ];
+          }
+          const splitRes = splitBallsForParallel(
+            s.balls,
+            s.paddleX,
+            PADDLE_Y,
+            s.ballSpeed,
+            s.nextBallId
+          );
+          s.balls = splitRes.balls;
+          s.nextBallId = splitRes.nextBallId;
+          spawnParticleBurst(s.paddleX, PADDLE_Y, 18, ['#a3e635', '#00e5ff', '#ff6b00']);
+        }
       }
 
       spawnParticleBurst(pu.x, pu.y, 10, [meta.color, '#ffffff']);
     };
 
     const collectAllFallingPowerUpsOnClear = (s: InternalSimState) => {
+      // Remove remaining extra balls when a stage or boss is cleared
+      if (s.balls.length > 1) {
+        s.balls = [s.balls[0]];
+      }
       if (s.powerUps.length === 0) return;
       // Play a single pick-up sound for the whole sweep so it doesn't clash with the level-clear jingle
       soundEngine.playPowerUp(s.powerUps[0].type);
@@ -1062,300 +1161,333 @@ export default function App() {
         }
       }
 
-      // 5. Ball Movement & Substepped Swept Collision Physics
-      if (!s.ballLaunched) {
+      // 5. Ball Movement & Substepped Swept Collision Physics (Supports 1 to MAX_BALLS balls)
+      if (!s.ballLaunched || s.balls.length === 0) {
         s.ballX = s.paddleX;
         s.ballY = PADDLE_Y - BALL_RADIUS - 2;
         return;
       }
 
-      // Gradually ramp ball speed within each level
+      // Gradually ramp shared ball speed within each level
       s.ballSpeed = Math.min(MAX_BALL_SPEED, s.ballSpeed + 3.2 * dt);
-      const currentSpeed = Math.max(1, Math.hypot(s.ballVx, s.ballVy));
-      s.ballVx = (s.ballVx / currentSpeed) * s.ballSpeed;
-      s.ballVy = (s.ballVy / currentSpeed) * s.ballSpeed;
+      for (let b = 0; b < s.balls.length; b++) {
+        const ball = s.balls[b];
+        const currentSpeed = Math.max(1, Math.hypot(ball.vx, ball.vy));
+        ball.vx = (ball.vx / currentSpeed) * s.ballSpeed;
+        ball.vy = (ball.vy / currentSpeed) * s.ballSpeed;
 
-      // Record trail point
-      s.ballTrail.push({ x: s.ballX, y: s.ballY });
-      if (s.ballTrail.length > 9) {
-        s.ballTrail.shift();
+        ball.trail.push({ x: ball.x, y: ball.y });
+        if (ball.trail.length > 9) {
+          ball.trail.shift();
+        }
       }
 
       const substeps = Math.max(3, Math.ceil((s.ballSpeed * dt) / (BALL_RADIUS * 0.65)));
       const subDt = dt / substeps;
 
-      for (let step = 0; step < substeps; step++) {
-        s.ballX += s.ballVx * subDt;
-        s.ballY += s.ballVy * subDt;
+      for (let bIdx = s.balls.length - 1; bIdx >= 0; bIdx--) {
+        const ball = s.balls[bIdx];
+        if (!ball) continue;
 
-        // Arena left/right walls
-        if (s.ballX - BALL_RADIUS <= 12) {
-          s.ballX = 12 + BALL_RADIUS;
-          s.ballVx = Math.abs(s.ballVx);
-          soundEngine.playBrickHit(0, false, true);
-        } else if (s.ballX + BALL_RADIUS >= ARENA_WIDTH - 12) {
-          s.ballX = ARENA_WIDTH - 12 - BALL_RADIUS;
-          s.ballVx = -Math.abs(s.ballVx);
-          soundEngine.playBrickHit(0, false, true);
-        }
+        for (let step = 0; step < substeps; step++) {
+          ball.x += ball.vx * subDt;
+          ball.y += ball.vy * subDt;
 
-        // Arena top ceiling
-        if (s.ballY - BALL_RADIUS <= 64) {
-          s.ballY = 64 + BALL_RADIUS;
-          s.ballVy = Math.abs(s.ballVy);
-          soundEngine.playBrickHit(0, false, true);
-        }
+          // Arena left/right walls
+          if (ball.x - BALL_RADIUS <= 12) {
+            ball.x = 12 + BALL_RADIUS;
+            ball.vx = Math.abs(ball.vx);
+            soundEngine.playBrickHit(0, false, true);
+          } else if (ball.x + BALL_RADIUS >= ARENA_WIDTH - 12) {
+            ball.x = ARENA_WIDTH - 12 - BALL_RADIUS;
+            ball.vx = -Math.abs(ball.vx);
+            soundEngine.playBrickHit(0, false, true);
+          }
 
-        // Paddle collision (only when ball is moving downward)
-        if (
-          s.ballVy > 0 &&
-          s.ballY + BALL_RADIUS >= PADDLE_Y &&
-          s.ballY - BALL_RADIUS <= PADDLE_Y + PADDLE_HEIGHT &&
-          s.ballX + BALL_RADIUS >= s.paddleX - halfPaddle &&
-          s.ballX - BALL_RADIUS <= s.paddleX + halfPaddle
-        ) {
-          const catchRes = evaluatePaddleCatch(
-            s.heat,
-            s.ballX,
-            s.paddleX,
-            s.paddleWidth,
-            s.combo
-          );
+          // Arena top ceiling
+          if (ball.y - BALL_RADIUS <= 64) {
+            ball.y = 64 + BALL_RADIUS;
+            ball.vy = Math.abs(ball.vy);
+            soundEngine.playBrickHit(0, false, true);
+          }
 
-          s.heat = catchRes.newHeat;
-          s.combo = 0;
-          s.powerFactor = 0.7;
-
-          // Visual + audio feedback on catch
-          soundEngine.playPaddleHit(catchRes.zone);
-          if (catchRes.zone === 'centre') {
-            spawnParticleBurst(s.ballX, PADDLE_Y, 8, ['#00e5ff', '#e0f2fe']);
-            const msg = getCentreCatchMessage(catchRes.heatDelta);
-            spawnFloatingText(s.ballX, PADDLE_Y - 18, msg.text, msg.color, 0.95);
-          } else {
-            spawnParticleBurst(s.ballX, PADDLE_Y, 12, ['#ff6b00', '#fde047']);
-            spawnFloatingText(
-              s.ballX,
-              PADDLE_Y - 18,
-              `EDGE DEFLECT +${catchRes.heatDelta}% HEAT!`,
-              '#ff6b00',
-              1.0
+          // Paddle collision (only when ball is moving downward)
+          if (
+            ball.vy > 0 &&
+            ball.y + BALL_RADIUS >= PADDLE_Y &&
+            ball.y - BALL_RADIUS <= PADDLE_Y + PADDLE_HEIGHT &&
+            ball.x + BALL_RADIUS >= s.paddleX - halfPaddle &&
+            ball.x - BALL_RADIUS <= s.paddleX + halfPaddle
+          ) {
+            const catchRes = evaluatePaddleCatch(
+              s.heat,
+              ball.x,
+              s.paddleX,
+              s.paddleWidth,
+              s.combo
             );
-          }
 
-          // Check if fuse blew from hitting 100% heat!
-          if (catchRes.fuseBlown) {
-            triggerFuseBlow(s, true);
-            return;
-          }
-
-          s.ballY = PADDLE_Y - BALL_RADIUS - 1;
-          s.ballVx = Math.sin(catchRes.bounceAngleRad) * s.ballSpeed;
-          s.ballVy = -Math.cos(catchRes.bounceAngleRad) * s.ballSpeed;
-          break;
-        }
-
-        // Circuit Breaker bottom shield bounce
-        const shieldY = PADDLE_Y + PADDLE_HEIGHT + 16;
-        if (
-          s.shieldHits > 0 &&
-          s.ballVy > 0 &&
-          s.ballY + BALL_RADIUS >= shieldY - 4 &&
-          s.ballY - BALL_RADIUS <= shieldY + 8
-        ) {
-          s.shieldHits -= 1;
-          s.ballY = shieldY - BALL_RADIUS - 5;
-          s.ballVy = -Math.abs(s.ballVy);
-          soundEngine.playPowerUp('CIRCUIT_BREAKER');
-          spawnParticleBurst(s.ballX, shieldY, 16, ['#00e5ff', '#ffffff']);
-          spawnFloatingText(s.ballX, shieldY - 20, 'BREAKER TRIPPED · SAVED!', '#00e5ff', 1.1);
-          break;
-        }
-
-        // Ball fell off the bottom of the screen
-        if (s.ballY - BALL_RADIUS > ARENA_HEIGHT) {
-          triggerFuseBlow(s, false);
-          return;
-        }
-
-        // Boss collision (on Boss levels)
-        if (s.boss && s.boss.hp > 0) {
-          const bossCol = testBallVsAABB(s.ballX, s.ballY, BALL_RADIUS, s.boss);
-          if (bossCol.hit) {
-            s.ballX += bossCol.normalX * (bossCol.penetration + 1.5);
-            s.ballY += bossCol.normalY * (bossCol.penetration + 1.5);
-            if (Math.abs(bossCol.normalX) > Math.abs(bossCol.normalY)) {
-              s.ballVx = bossCol.normalX > 0 ? Math.abs(s.ballVx) : -Math.abs(s.ballVx);
-            } else {
-              s.ballVy = bossCol.normalY > 0 ? Math.abs(s.ballVy) : -Math.abs(s.ballVy);
+            s.heat = catchRes.newHeat;
+            // Shared Power Factor combo resets on paddle catch ONLY when 1 ball is in play
+            if (shouldResetComboOnPaddleCatch(s.balls.length)) {
+              s.combo = 0;
+              s.powerFactor = 0.7;
             }
 
-            if (s.boss.hitFlash <= 0) {
-              s.boss.hp -= 1;
-              s.boss.hitFlash = 0.16;
-              s.combo += 1;
-              s.powerFactor = calculatePowerFactor(s.combo);
-              if (s.powerFactor > s.peakPowerFactor) {
-                s.peakPowerFactor = s.powerFactor;
-              }
-              if (s.powerFactor >= 0.99 && s.perfectPfFlashTimer <= 0) {
-                s.perfectPfFlashTimer = 2.0;
-                spawnFloatingText(s.ballX, s.ballY - 24, 'PERFECT 0.99 PF!', '#00e5ff', 1.25);
-              }
-
-              const pts = calculateBrickScore(250, s.combo);
-              addScore(s, pts);
-              soundEngine.playBrickHit(s.combo, s.boss.hp <= 0, false);
-              spawnParticleBurst(
-                bossCol.contactX,
-                bossCol.contactY,
-                16,
-                ['#ff6b00', '#00e5ff', '#fde047']
+            // Visual + audio feedback on catch
+            soundEngine.playPaddleHit(catchRes.zone);
+            if (catchRes.zone === 'centre') {
+              spawnParticleBurst(ball.x, PADDLE_Y, 8, ['#00e5ff', '#e0f2fe']);
+              const msg = getCentreCatchMessage(catchRes.heatDelta);
+              spawnFloatingText(ball.x, PADDLE_Y - 18, msg.text, msg.color, 0.95);
+            } else {
+              spawnParticleBurst(ball.x, PADDLE_Y, 12, ['#ff6b00', '#fde047']);
+              spawnFloatingText(
+                ball.x,
+                PADDLE_Y - 18,
+                `EDGE DEFLECT +${catchRes.heatDelta}% HEAT!`,
+                '#ff6b00',
+                1.0
               );
-              spawnFloatingText(bossCol.contactX, bossCol.contactY, `+${pts}`, '#ffb703', 1.1);
+            }
 
-              // Occasional power-up drop from Boss hits
-              if (s.boss.hp > 0 && s.boss.hp % 5 === 0) {
-                const pType = selectPowerUpFromRoll(Math.random(), s.heat, s.lives);
+            // Check if fuse blew from hitting 100% heat!
+            if (catchRes.fuseBlown) {
+              triggerFuseBlow(s, true);
+              return;
+            }
+
+            ball.y = PADDLE_Y - BALL_RADIUS - 1;
+            ball.vx = Math.sin(catchRes.bounceAngleRad) * s.ballSpeed;
+            ball.vy = -Math.cos(catchRes.bounceAngleRad) * s.ballSpeed;
+            break;
+          }
+
+          // Circuit Breaker bottom shield bounce
+          const shieldY = PADDLE_Y + PADDLE_HEIGHT + 16;
+          if (
+            s.shieldHits > 0 &&
+            ball.vy > 0 &&
+            ball.y + BALL_RADIUS >= shieldY - 4 &&
+            ball.y - BALL_RADIUS <= shieldY + 8
+          ) {
+            s.shieldHits -= 1;
+            ball.y = shieldY - BALL_RADIUS - 5;
+            ball.vy = -Math.abs(ball.vy);
+            soundEngine.playPowerUp('CIRCUIT_BREAKER');
+            spawnParticleBurst(ball.x, shieldY, 16, ['#00e5ff', '#ffffff']);
+            spawnFloatingText(ball.x, shieldY - 20, 'BREAKER TRIPPED · SAVED!', '#00e5ff', 1.1);
+            break;
+          }
+
+          // Ball fell off the bottom of the screen
+          if (ball.y - BALL_RADIUS > ARENA_HEIGHT) {
+            const lostX = ball.x;
+            s.balls.splice(bIdx, 1);
+            const lossRes = evaluateBallLost(s.balls.length, s.lives);
+            if (lossRes.resetCombo) {
+              s.combo = 0;
+              s.powerFactor = 0.7;
+            }
+            if (!lossRes.lifeLost) {
+              // Other balls are still in play: small "SURGE LOST" pop-up, no life lost, no flash or shake
+              spawnFloatingText(lostX, ARENA_HEIGHT - 24, 'SURGE LOST', '#f97316', 0.95);
+              break;
+            } else {
+              s.ballX = lostX;
+              triggerFuseBlow(s, false);
+              return;
+            }
+          }
+
+          // Boss collision (on Boss levels)
+          if (s.boss && s.boss.hp > 0) {
+            const bossCol = testBallVsAABB(ball.x, ball.y, BALL_RADIUS, s.boss);
+            if (bossCol.hit) {
+              ball.x += bossCol.normalX * (bossCol.penetration + 1.5);
+              ball.y += bossCol.normalY * (bossCol.penetration + 1.5);
+              if (Math.abs(bossCol.normalX) > Math.abs(bossCol.normalY)) {
+                ball.vx = bossCol.normalX > 0 ? Math.abs(ball.vx) : -Math.abs(ball.vx);
+              } else {
+                ball.vy = bossCol.normalY > 0 ? Math.abs(ball.vy) : -Math.abs(ball.vy);
+              }
+
+              // 0.16s invulnerability window so two balls hitting at once count as one hit
+              if (s.boss.hitFlash <= 0) {
+                s.boss.hp -= 1;
+                s.boss.hitFlash = 0.16;
+                s.combo += 1;
+                s.powerFactor = calculatePowerFactor(s.combo);
+                if (s.powerFactor > s.peakPowerFactor) {
+                  s.peakPowerFactor = s.powerFactor;
+                }
+                if (s.powerFactor >= 0.99 && s.perfectPfFlashTimer <= 0) {
+                  s.perfectPfFlashTimer = 2.0;
+                  spawnFloatingText(ball.x, ball.y - 24, 'PERFECT 0.99 PF!', '#00e5ff', 1.25);
+                }
+
+                const pts = calculateBrickScore(250, s.combo);
+                addScore(s, pts);
+                soundEngine.playBrickHit(s.combo, s.boss.hp <= 0, false);
+                spawnParticleBurst(
+                  bossCol.contactX,
+                  bossCol.contactY,
+                  16,
+                  ['#ff6b00', '#00e5ff', '#fde047']
+                );
+                spawnFloatingText(bossCol.contactX, bossCol.contactY, `+${pts}`, '#ffb703', 1.1);
+
+                // Occasional power-up drop from Boss hits
+                if (s.boss.hp > 0 && s.boss.hp % 5 === 0) {
+                  const pType = selectPowerUpFromRoll(Math.random(), s.heat, s.lives);
+                  s.powerUps.push({
+                    id: s.nextPowerUpId++,
+                    type: pType,
+                    x: bossCol.contactX,
+                    y: bossCol.contactY + 12,
+                    vy: 135,
+                    width: 84,
+                    height: 22,
+                    pulse: 0,
+                  });
+                }
+
+                if (s.boss.hp <= 0) {
+                  // Boss defeated! Treat any falling power-up capsules as caught & remove extra balls
+                  collectAllFallingPowerUpsOnClear(s);
+                  s.hitstopTimer = 0.08;
+                  s.screenShakeTrauma = 1.0;
+                  s.screenFlashAlpha = reduceFlashRef.current ? 0.15 : 0.55;
+                  s.screenFlashColor = '#00e5ff';
+                  addScore(s, 2500 * s.world);
+                  spawnParticleBurst(
+                    s.boss.x + s.boss.width / 2,
+                    s.boss.y + s.boss.height / 2,
+                    45,
+                    ['#ff6b00', '#00e5ff', '#ffffff', '#facc15'],
+                    80,
+                    380
+                  );
+                  soundEngine.playLevelClearJingle();
+                  s.levelClearBanner = WORLDS[s.world].clearMessage;
+                  s.levelClearTimer = 2.6;
+                  return;
+                }
+              }
+              break;
+            }
+          }
+
+          // Brick collisions
+          for (let i = 0; i < s.bricks.length; i++) {
+            const brick = s.bricks[i];
+            if (brick.hp <= 0) continue;
+
+            const col = testBallVsAABB(ball.x, ball.y, BALL_RADIUS, brick);
+            if (!col.hit) continue;
+
+            // Push ball out of brick and reflect velocity along outward normal
+            ball.x += col.normalX * (col.penetration + 0.5);
+            ball.y += col.normalY * (col.penetration + 0.5);
+            if (Math.abs(col.normalX) > Math.abs(col.normalY)) {
+              ball.vx = col.normalX > 0 ? Math.abs(ball.vx) : -Math.abs(ball.vx);
+            } else {
+              ball.vy = col.normalY > 0 ? Math.abs(ball.vy) : -Math.abs(ball.vy);
+            }
+
+            // Prevent near-horizontal infinite loops
+            if (Math.abs(ball.vy) < 95) {
+              ball.vy = (ball.vy >= 0 ? 1 : -1) * 110;
+            }
+
+            if (brick.indestructible) {
+              brick.hitFlash = 0.08;
+              soundEngine.playBrickHit(s.combo, false, true);
+              spawnParticleBurst(col.contactX, col.contactY, 6, ['#94a3b8', '#f59e0b']);
+              break;
+            }
+
+            brick.hp -= 1;
+            brick.hitFlash = 0.12;
+            s.combo += 1;
+            const prevPf = s.powerFactor;
+            s.powerFactor = calculatePowerFactor(s.combo);
+            if (s.powerFactor > s.peakPowerFactor) {
+              s.peakPowerFactor = s.powerFactor;
+            }
+            if (s.powerFactor >= 0.99 && prevPf < 0.99) {
+              s.perfectPfFlashTimer = 2.2;
+              spawnFloatingText(brick.x + brick.width / 2, brick.y, 'PERFECT PF 0.99!', '#00e5ff', 1.25);
+            }
+
+            const eqMeta = EQUIPMENT_CATALOG[brick.equipment];
+            const destroyed = brick.hp <= 0;
+            const basePts = destroyed ? eqMeta.basePoints : Math.round(eqMeta.basePoints * 0.35);
+            const pts = calculateBrickScore(basePts, s.combo);
+            addScore(s, pts);
+
+            soundEngine.playBrickHit(s.combo, destroyed, false);
+
+            if (destroyed) {
+              s.hitstopTimer = 0.025;
+              s.screenShakeTrauma = Math.min(0.45, s.screenShakeTrauma + 0.14);
+              spawnParticleBurst(
+                brick.x + brick.width / 2,
+                brick.y + brick.height / 2,
+                16,
+                [eqMeta.accentColor, eqMeta.secondaryColor, '#ffffff']
+              );
+              spawnFloatingText(
+                brick.x + brick.width / 2,
+                brick.y + brick.height / 2,
+                `+${pts}`,
+                eqMeta.accentColor,
+                1.05
+              );
+
+              // 22% chance to drop a Power-Up capsule
+              if (Math.random() < 0.22) {
+                const pType: PowerUpType = selectPowerUpFromRoll(
+                  Math.random(),
+                  s.heat,
+                  s.lives
+                );
                 s.powerUps.push({
                   id: s.nextPowerUpId++,
                   type: pType,
-                  x: bossCol.contactX,
-                  y: bossCol.contactY + 12,
-                  vy: 135,
+                  x: brick.x + brick.width / 2,
+                  y: brick.y + brick.height / 2,
+                  vy: 130,
                   width: 84,
                   height: 22,
                   pulse: 0,
                 });
               }
 
-              if (s.boss.hp <= 0) {
-                // Boss defeated! Treat any falling power-up capsules as caught
+              // Check if regular level is cleared
+              if (s.level < 4 && isRegularLevelCleared(s.bricks)) {
+                // Treat any falling power-up capsules as caught & remove extra balls before clearing
                 collectAllFallingPowerUpsOnClear(s);
-                s.hitstopTimer = 0.08;
-                s.screenShakeTrauma = 1.0;
-                s.screenFlashAlpha = reduceFlashRef.current ? 0.15 : 0.55;
-                s.screenFlashColor = '#00e5ff';
-                addScore(s, 2500 * s.world);
-                spawnParticleBurst(
-                  s.boss.x + s.boss.width / 2,
-                  s.boss.y + s.boss.height / 2,
-                  45,
-                  ['#ff6b00', '#00e5ff', '#ffffff', '#facc15'],
-                  80,
-                  380
-                );
                 soundEngine.playLevelClearJingle();
                 s.levelClearBanner = WORLDS[s.world].clearMessage;
-                s.levelClearTimer = 2.6;
+                s.levelClearTimer = 2.3;
                 return;
               }
+            } else {
+              spawnParticleBurst(col.contactX, col.contactY, 7, [eqMeta.accentColor, '#ffffff']);
             }
+
             break;
           }
         }
+      }
 
-        // Brick collisions
-        for (let i = 0; i < s.bricks.length; i++) {
-          const brick = s.bricks[i];
-          if (brick.hp <= 0) continue;
-
-          const col = testBallVsAABB(s.ballX, s.ballY, BALL_RADIUS, brick);
-          if (!col.hit) continue;
-
-          // Push ball out of brick and reflect velocity along outward normal
-          s.ballX += col.normalX * (col.penetration + 0.5);
-          s.ballY += col.normalY * (col.penetration + 0.5);
-          if (Math.abs(col.normalX) > Math.abs(col.normalY)) {
-            s.ballVx = col.normalX > 0 ? Math.abs(s.ballVx) : -Math.abs(s.ballVx);
-          } else {
-            s.ballVy = col.normalY > 0 ? Math.abs(s.ballVy) : -Math.abs(s.ballVy);
-          }
-
-          // Prevent near-horizontal infinite loops
-          if (Math.abs(s.ballVy) < 95) {
-            s.ballVy = (s.ballVy >= 0 ? 1 : -1) * 110;
-          }
-
-          if (brick.indestructible) {
-            brick.hitFlash = 0.08;
-            soundEngine.playBrickHit(s.combo, false, true);
-            spawnParticleBurst(col.contactX, col.contactY, 6, ['#94a3b8', '#f59e0b']);
-            break;
-          }
-
-          brick.hp -= 1;
-          brick.hitFlash = 0.12;
-          s.combo += 1;
-          const prevPf = s.powerFactor;
-          s.powerFactor = calculatePowerFactor(s.combo);
-          if (s.powerFactor > s.peakPowerFactor) {
-            s.peakPowerFactor = s.powerFactor;
-          }
-          if (s.powerFactor >= 0.99 && prevPf < 0.99) {
-            s.perfectPfFlashTimer = 2.2;
-            spawnFloatingText(brick.x + brick.width / 2, brick.y, 'PERFECT PF 0.99!', '#00e5ff', 1.25);
-          }
-
-          const eqMeta = EQUIPMENT_CATALOG[brick.equipment];
-          const destroyed = brick.hp <= 0;
-          const basePts = destroyed ? eqMeta.basePoints : Math.round(eqMeta.basePoints * 0.35);
-          const pts = calculateBrickScore(basePts, s.combo);
-          addScore(s, pts);
-
-          soundEngine.playBrickHit(s.combo, destroyed, false);
-
-          if (destroyed) {
-            s.hitstopTimer = 0.025;
-            s.screenShakeTrauma = Math.min(0.45, s.screenShakeTrauma + 0.14);
-            spawnParticleBurst(
-              brick.x + brick.width / 2,
-              brick.y + brick.height / 2,
-              16,
-              [eqMeta.accentColor, eqMeta.secondaryColor, '#ffffff']
-            );
-            spawnFloatingText(
-              brick.x + brick.width / 2,
-              brick.y + brick.height / 2,
-              `+${pts}`,
-              eqMeta.accentColor,
-              1.05
-            );
-
-            // 22% chance to drop a Power-Up capsule
-            if (Math.random() < 0.22) {
-              const pType: PowerUpType = selectPowerUpFromRoll(
-                Math.random(),
-                s.heat,
-                s.lives
-              );
-              s.powerUps.push({
-                id: s.nextPowerUpId++,
-                type: pType,
-                x: brick.x + brick.width / 2,
-                y: brick.y + brick.height / 2,
-                vy: 130,
-                width: 84,
-                height: 22,
-                pulse: 0,
-              });
-            }
-
-            // Check if regular level is cleared
-            if (s.level < 4 && isRegularLevelCleared(s.bricks)) {
-              // Treat any falling power-up capsules as caught before clearing
-              collectAllFallingPowerUpsOnClear(s);
-              soundEngine.playLevelClearJingle();
-              s.levelClearBanner = WORLDS[s.world].clearMessage;
-              s.levelClearTimer = 2.3;
-              return;
-            }
-          } else {
-            spawnParticleBurst(col.contactX, col.contactY, 7, [eqMeta.accentColor, '#ffffff']);
-          }
-
-          break;
-        }
+      if (s.balls.length > 0) {
+        s.ballX = s.balls[0].x;
+        s.ballY = s.balls[0].y;
+        s.ballVx = s.balls[0].vx;
+        s.ballVy = s.balls[0].vy;
+        s.ballTrail = s.balls[0].trail;
       }
     };
 
@@ -1410,9 +1542,16 @@ export default function App() {
         );
       }
 
-      // 7. Crackling Surge Ball
+      // 7. Crackling Surge Ball(s)
       if (s.fuseBlowRespawnTimer <= 0) {
-        drawSurgeBall(ctx, s.ballX, s.ballY, s.ballTrail, s.elapsedTime);
+        if (s.ballLaunched && s.balls.length > 0) {
+          for (let b = 0; b < s.balls.length; b++) {
+            const ball = s.balls[b];
+            drawSurgeBall(ctx, ball.x, ball.y, ball.trail, s.elapsedTime, ball.colorVariant);
+          }
+        } else {
+          drawSurgeBall(ctx, s.ballX, s.ballY, s.ballTrail, s.elapsedTime, 'cyan');
+        }
       }
 
       // 8. Pooled Sparks & Glass Shards
@@ -1575,8 +1714,8 @@ export default function App() {
         />
       </div>
 
-      {/* Optional CRT Scanlines & Vignette Overlay (Toggleable with [C]) */}
-      {crtEnabled && (
+      {/* Optional CRT Scanlines & Vignette Overlay (Toggleable with [C]; turned off on Game Over / Victory screens so QR code is never covered) */}
+      {crtEnabled && gameState !== 'gameover' && (
         <div
           className="fixed inset-0 z-40 pointer-events-none crt-scanlines"
           data-testid="crt-overlay"

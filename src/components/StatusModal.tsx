@@ -1,5 +1,10 @@
-import React from 'react';
-import { WORLDS } from '../game/rules';
+import React, { useMemo } from 'react';
+import {
+  WORLDS,
+  FUSECO_EXPERT_SHORT_URL,
+  getFusecoExpertContactUrl,
+} from '../game/rules';
+import { generateQrMatrix } from '../game/qrcode';
 
 export interface EndOfRunStats {
   outcome: 'victory' | 'defeat';
@@ -46,6 +51,28 @@ export const StatusModal: React.FC<StatusModalProps> = ({
   onToggleCrt,
   onToggleReduceFlash,
 }) => {
+  const isVictory = endStats?.outcome === 'victory';
+  const qrTargetUrl = getFusecoExpertContactUrl(isVictory ? 'victory' : 'defeat');
+
+  const qrSvgData = useMemo(() => {
+    const matrix = generateQrMatrix(qrTargetUrl);
+    const size = matrix.length;
+    const quietZone = 4;
+    const totalModules = size + quietZone * 2;
+    const pathParts: string[] = [];
+    for (let r = 0; r < size; r++) {
+      for (let c = 0; c < size; c++) {
+        if (matrix[r][c]) {
+          pathParts.push(`M${c + quietZone},${r + quietZone}h1v1h-1z`);
+        }
+      }
+    }
+    return {
+      totalModules,
+      pathD: pathParts.join(''),
+    };
+  }, [qrTargetUrl]);
+
   if (mode === 'paused') {
     const worldMeta = WORLDS[currentWorld];
     return (
@@ -155,7 +182,6 @@ export const StatusModal: React.FC<StatusModalProps> = ({
   }
 
   // Game Over or Victory Modal
-  const isVictory = endStats?.outcome === 'victory';
   const score = Math.round(endStats?.score ?? 0);
   const highScore = Math.round(endStats?.highScore ?? 0);
   const peakPf = (endStats?.peakPowerFactor ?? 0.7).toFixed(2);
@@ -164,40 +190,40 @@ export const StatusModal: React.FC<StatusModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-30 overflow-y-auto flex p-2 sm:p-4 bg-[#050810]/88"
+      className="fixed inset-0 z-50 overflow-y-auto flex p-2 sm:p-4 bg-[#050810]/88"
       role="dialog"
       aria-modal="true"
       aria-labelledby="outcome-modal-title"
     >
       <div
-        className={`m-auto w-full max-w-xl bg-[#0b111e] border-2 p-5 md:p-8 [@media(max-height:480px)]:p-3.5 text-center ${
+        className={`m-auto w-full max-w-xl bg-[#0b111e] border-2 p-5 md:p-6 [@media(max-height:480px)]:p-3.5 text-center ${
           isVictory
             ? 'border-[#00e5ff] shadow-[0_0_50px_rgba(0,229,255,0.35)]'
             : 'border-[#ff6b00] shadow-[0_0_50px_rgba(255,107,0,0.35)]'
         }`}
       >
-        <div className="font-mono-tabular text-xs [@media(max-height:480px)]:text-[10px] font-bold uppercase tracking-widest text-[#ffb703] mb-1.5 [@media(max-height:480px)]:mb-0.5">
+        <div className="font-mono-tabular text-xs [@media(max-height:480px)]:text-[10px] font-bold uppercase tracking-widest text-[#ffb703] mb-1 [@media(max-height:480px)]:mb-0.5">
           {isVictory ? 'AUSTRALIAN GRID RESTORED · 30 YEARS OF FUSECO' : 'OVERCURRENT PROTECTION TRIPPED'}
         </div>
 
         <h2
           id="outcome-modal-title"
-          className={`font-pixel text-xl md:text-3xl [@media(max-height:480px)]:text-lg mb-2.5 [@media(max-height:480px)]:mb-1 ${
+          className={`font-pixel text-xl md:text-3xl [@media(max-height:480px)]:text-lg mb-2 [@media(max-height:480px)]:mb-1 ${
             isVictory ? 'text-[#00e5ff]' : 'text-[#ff6b00]'
           }`}
         >
           {isVictory ? 'VICTORY!' : 'GAME OVER'}
         </h2>
 
-        <p className="font-display text-base md:text-lg [@media(max-height:480px)]:text-sm font-bold text-white mb-5 [@media(max-height:480px)]:mb-2">
+        <p className="font-display text-base md:text-lg [@media(max-height:480px)]:text-sm font-bold text-white mb-4 [@media(max-height:480px)]:mb-2">
           {isVictory
             ? 'The lights are on. Thanks for keeping Australia powered!'
             : 'Fuse blown! Need a fuse urgently?'}
         </p>
 
         {/* 3 Tabular Stat Tiles */}
-        <div className="grid grid-cols-3 gap-3 [@media(max-height:480px)]:gap-2 mb-5 [@media(max-height:480px)]:mb-2.5">
-          <div className="bg-[#090d16] border border-slate-800 p-3 [@media(max-height:480px)]:p-2">
+        <div className="grid grid-cols-3 gap-3 [@media(max-height:480px)]:gap-2 mb-4 [@media(max-height:480px)]:mb-2.5">
+          <div className="bg-[#090d16] border border-slate-800 p-2.5 [@media(max-height:480px)]:p-2">
             <div className="text-[10px] [@media(max-height:480px)]:text-[9px] font-mono-tabular uppercase text-slate-400 mb-1 [@media(max-height:480px)]:mb-0.5">
               FINAL SCORE
             </div>
@@ -206,7 +232,7 @@ export const StatusModal: React.FC<StatusModalProps> = ({
             </div>
           </div>
 
-          <div className="bg-[#090d16] border border-slate-800 p-3 [@media(max-height:480px)]:p-2">
+          <div className="bg-[#090d16] border border-slate-800 p-2.5 [@media(max-height:480px)]:p-2">
             <div className="text-[10px] [@media(max-height:480px)]:text-[9px] font-mono-tabular uppercase text-slate-400 mb-1 [@media(max-height:480px)]:mb-0.5">
               HIGH SCORE
             </div>
@@ -215,7 +241,7 @@ export const StatusModal: React.FC<StatusModalProps> = ({
             </div>
           </div>
 
-          <div className="bg-[#090d16] border border-slate-800 p-3 [@media(max-height:480px)]:p-2">
+          <div className="bg-[#090d16] border border-slate-800 p-2.5 [@media(max-height:480px)]:p-2">
             <div className="text-[10px] [@media(max-height:480px)]:text-[9px] font-mono-tabular uppercase text-slate-400 mb-1 [@media(max-height:480px)]:mb-0.5">
               {isVictory ? 'PEAK PF' : 'STAGE REACHED'}
             </div>
@@ -228,12 +254,12 @@ export const StatusModal: React.FC<StatusModalProps> = ({
         </div>
 
         {/* Primary Play Again / Try Again Button */}
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-3 [@media(max-height:480px)]:gap-2 mb-5 [@media(max-height:480px)]:mb-2.5">
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-3 [@media(max-height:480px)]:gap-2 mb-4 [@media(max-height:480px)]:mb-2.5">
           <button
             type="button"
             data-start="true"
             onClick={onRestartRun}
-            className="w-full sm:w-auto px-8 py-3.5 [@media(max-height:480px)]:px-5 [@media(max-height:480px)]:py-2 bg-[#ff6b00] hover:bg-[#ff8524] text-[#090d16] font-pixel text-sm [@media(max-height:480px)]:text-xs tracking-wider border-2 border-white cursor-pointer"
+            className="w-full sm:w-auto px-8 py-3 [@media(max-height:480px)]:px-5 [@media(max-height:480px)]:py-2 bg-[#ff6b00] hover:bg-[#ff8524] text-[#090d16] font-pixel text-sm [@media(max-height:480px)]:text-xs tracking-wider border-2 border-white cursor-pointer"
           >
             {isVictory ? 'PLAY AGAIN' : 'TRY AGAIN'}
           </button>
@@ -241,20 +267,55 @@ export const StatusModal: React.FC<StatusModalProps> = ({
           <button
             type="button"
             onClick={onReturnTitle}
-            className="w-full sm:w-auto px-6 py-3.5 [@media(max-height:480px)]:px-4 [@media(max-height:480px)]:py-2 bg-[#111927] hover:border-[#00e5ff] text-slate-200 font-mono-tabular text-xs font-bold border-2 border-slate-700 cursor-pointer"
+            className="w-full sm:w-auto px-6 py-3 [@media(max-height:480px)]:px-4 [@media(max-height:480px)]:py-2 bg-[#111927] hover:border-[#00e5ff] text-slate-200 font-mono-tabular text-xs font-bold border-2 border-slate-700 cursor-pointer"
           >
             TITLE SCREEN
           </button>
         </div>
 
-        {/* Fuseco Call To Action */}
+        {/* Offline QR Code Panel — Shown on desktop/kiosk screens; hidden on phones, short screens, and touch-only devices */}
+        <div
+          className="hidden [@media(min-width:768px)_and_(min-height:560px)_and_(hover:hover)_and_(pointer:fine)]:flex flex-col items-center justify-center bg-[#090d16] border border-slate-800 p-3 mb-3.5"
+          data-testid="fuseco-qr-section"
+          data-qr-url={qrTargetUrl}
+        >
+          <div className="text-xs font-mono-tabular font-bold text-white mb-2">
+            Scan to talk to a Fuseco expert
+          </div>
+          <svg
+            width="147"
+            height="147"
+            viewBox={`0 0 ${qrSvgData.totalModules} ${qrSvgData.totalModules}`}
+            shapeRendering="crispEdges"
+            className="w-[147px] h-[147px] bg-white shrink-0"
+            role="img"
+            aria-label={`QR code linking to ${FUSECO_EXPERT_SHORT_URL}`}
+            data-testid="fuseco-qr-svg"
+          >
+            <rect
+              width={qrSvgData.totalModules}
+              height={qrSvgData.totalModules}
+              fill="#ffffff"
+            />
+            <path d={qrSvgData.pathD} fill="#000000" />
+          </svg>
+          <div
+            className="text-xs font-mono-tabular text-[#00e5ff] mt-1.5"
+            data-testid="fuseco-qr-short-url"
+          >
+            {FUSECO_EXPERT_SHORT_URL}
+          </div>
+        </div>
+
+        {/* Fuseco Call To Action (Preserved) */}
         <div className="border-t border-slate-800 pt-3 [@media(max-height:480px)]:pt-2 text-xs md:text-sm [@media(max-height:480px)]:text-[11px] font-mono-tabular text-amber-300 font-bold">
           Talk to a Fuseco expert: 1300 387 326 |{' '}
           <a
-            href="https://www.fuseco.com.au"
+            href={qrTargetUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="underline hover:text-white"
+            data-testid="fuseco-expert-link"
           >
             www.fuseco.com.au
           </a>
@@ -263,3 +324,4 @@ export const StatusModal: React.FC<StatusModalProps> = ({
     </div>
   );
 };
+

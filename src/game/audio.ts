@@ -110,6 +110,13 @@ class ChiptuneAudioEngine {
       this.playTone(1567.98, 0.14, 'triangle', 0.12, 659.25, 0.12);
       return;
     }
+    if (type === 'PARALLEL_CIRCUIT') {
+      // Rapid 3-way electrical split arpeggio
+      this.playTone(587.33, 0.055, 'sawtooth', 0.13, 880, 0);
+      this.playTone(783.99, 0.055, 'square', 0.13, 1174.66, 0.045);
+      this.playTone(1046.5, 0.08, 'triangle', 0.14, 1567.98, 0.09);
+      return;
+    }
     // Standard arcade power-up arpeggio
     const notes = [523.25, 659.25, 783.99, 1046.5];
     notes.forEach((n, idx) => {

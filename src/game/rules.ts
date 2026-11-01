@@ -15,7 +15,8 @@ export type PowerUpType =
   | 'CIRCUIT_BREAKER'
   | 'HIGHER_AMP'
   | 'COOLING'
-  | 'AFTER_HOURS';
+  | 'AFTER_HOURS'
+  | 'PARALLEL_CIRCUIT';
 
 export interface EquipmentMeta {
   type: EquipmentType;
@@ -159,7 +160,27 @@ export const POWERUP_CATALOG: Record<PowerUpType, PowerUpMeta> = {
     color: '#facc15',
     borderColor: '#fef08a',
   },
+  PARALLEL_CIRCUIT: {
+    type: 'PARALLEL_CIRCUIT',
+    name: 'PARALLEL CIRCUIT',
+    capsuleText: 'PARALLEL',
+    shortTag: 'x3',
+    color: '#a3e635',
+    borderColor: '#ecfccb',
+  },
 };
+
+/**
+ * Single clearly named configuration for the Fuseco expert QR code & contact URL
+ * shown on the Victory and Game Over screens.
+ */
+export const FUSECO_EXPERT_CONTACT_BASE_URL = 'https://www.fuseco.com.au/contact-us';
+export const FUSECO_EXPERT_SHORT_URL = 'fuseco.com.au/contact-us';
+
+export function getFusecoExpertContactUrl(outcome: 'victory' | 'defeat'): string {
+  const utmContent = outcome === 'victory' ? 'victory' : 'gameover';
+  return `${FUSECO_EXPERT_CONTACT_BASE_URL}?utm_source=surge-breaker&utm_medium=arcade-game&utm_campaign=30-years&utm_content=${utmContent}`;
+}
 
 export const AMP_LEVEL_LABELS = ['5A', '10A', '20A', '32A'] as const;
 export const AMP_WIDTH_MULTIPLIERS = [1.0, 1.28, 1.56, 1.85] as const;
@@ -511,32 +532,160 @@ export function getFilamentVisuals(heat: number): {
   };
 }
 
+export const MAX_BALLS = 5;
+export const PARALLEL_SPLIT_ANGLE_DEG = 20;
+export const PARALLEL_SPLIT_ANGLE_RAD = (PARALLEL_SPLIT_ANGLE_DEG * Math.PI) / 180;
+
+export interface SurgeBallState {
+  id: number;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  trail: { x: number; y: number }[];
+  colorVariant: 'cyan' | 'orange';
+}
+
+/**
+ * Splits the ball closest to the paddle (or the only ball in play) by adding up to two new balls
+ * at its position, heading ±20 degrees either side of its direction at the same speed,
+ * capped at MAX_BALLS (5).
+ */
+export function splitBallsForParallel(
+  balls: SurgeBallState[],
+  paddleX: number,
+  paddleY: number,
+  targetSpeed: number,
+  nextBallIdStart: number = 100
+): {
+  balls: SurgeBallState[];
+  addedCount: number;
+  nextBallId: number;
+} {
+  if (balls.length === 0 || balls.length >= MAX_BALLS) {
+    return {
+      balls: [...balls],
+      addedCount: 0,
+      nextBallId: nextBallIdStart,
+    };
+  }
+
+  // Find the ball closest to the paddle
+  let closestIdx = 0;
+  let closestDist = Infinity;
+  for (let i = 0; i < balls.length; i++) {
+    const b = balls[i];
+    const d = Math.hypot(b.x - paddleX, b.y - paddleY);
+    if (d < closestDist) {
+      closestDist = d;
+      closestIdx = i;
+    }
+  }
+
+  const source = balls[closestIdx];
+  const speed = Math.max(1, targetSpeed || Math.hypot(source.vx, source.vy));
+  const baseAngle =
+    source.vx === 0 && source.vy === 0 ? -Math.PI / 2 : Math.atan2(source.vy, source.vx);
+
+  const offsets = [-PARALLEL_SPLIT_ANGLE_RAD, PARALLEL_SPLIT_ANGLE_RAD];
+  const toAdd = Math.max(0, Math.min(2, MAX_BALLS - balls.length));
+  const updatedBalls = [...balls];
+  let nextId = nextBallIdStart;
+
+  for (let i = 0; i < toAdd; i++) {
+    const newAngle = baseAngle + offsets[i];
+    const colorVariant: 'cyan' | 'orange' = updatedBalls.length % 2 === 1 ? 'orange' : 'cyan';
+    updatedBalls.push({
+      id: nextId++,
+      x: source.x,
+      y: source.y,
+      vx: Math.cos(newAngle) * speed,
+      vy: Math.sin(newAngle) * speed,
+      trail: [...source.trail],
+      colorVariant,
+    });
+  }
+
+  return {
+    balls: updatedBalls,
+    addedCount: toAdd,
+    nextBallId: nextId,
+  };
+}
+
+/**
+ * Shared Power Factor combo reset rule on paddle catch:
+ * - Resets the combo ONLY when there is a single ball in play (activeBallCount <= 1).
+ * - Preserves the combo when multiple balls are in play.
+ */
+export function shouldResetComboOnPaddleCatch(activeBallCount: number): boolean {
+  return activeBallCount <= 1;
+}
+
+/**
+ * Evaluates the outcome when a ball falls off the bottom of the screen:
+ * - Always resets the Power Factor combo.
+ * - A life is lost ONLY when the last ball in play is lost (remainingBallsAfterLoss <= 0).
+ */
+export function evaluateBallLost(
+  remainingBallsAfterLoss: number,
+  currentLives: number
+): {
+  lifeLost: boolean;
+  newLives: number;
+  resetCombo: boolean;
+} {
+  if (remainingBallsAfterLoss > 0) {
+    return {
+      lifeLost: false,
+      newLives: currentLives,
+      resetCombo: true,
+    };
+  }
+  return {
+    lifeLost: true,
+    newLives: Math.max(0, currentLives - 1),
+    resetCombo: true,
+  };
+}
+
 /**
  * Selects a power-up type deterministically or from a random roll [0..1).
- * "After-Hours Call-Out" is 3% base (reduced from 9%) and 5% on last life (reduced from 14%),
- * with the freed share (+6% normal / +9% last life) spread evenly (+2% / +3% each) across the other 3 power-ups.
+ * - AFTER_HOURS: 3% normally (0.03), 5% on last life (0.05)
+ * - PARALLEL_CIRCUIT: 15% (0.15), taken evenly (-5% each) from the other three power-ups
+ * - COOLING, HIGHER_AMP, CIRCUIT_BREAKER share the remaining 82% (or 80% on last life),
+ *   with COOLING weighted higher when heat > 55%.
  */
 export function selectPowerUpFromRoll(roll: number, currentHeat: number, currentLives: number): PowerUpType {
   const onLastLife = currentLives <= 1;
-  const afterHoursThreshold = onLastLife ? 0.05 : 0.03;
+  const afterHoursShare = onLastLife ? 0.05 : 0.03;
+  const parallelShare = 0.15;
   const freedPerOther = onLastLife ? 0.03 : 0.02;
+  const parallelReductionPerOther = 0.05; // 15% taken evenly from the other 3 power-ups
 
-  if (roll < afterHoursThreshold) {
+  if (roll < afterHoursShare) {
     return 'AFTER_HOURS';
   }
 
-  // If heat is high (>55%), weight Cooling higher (+freedPerOther)
-  if (currentHeat > 55 && roll < afterHoursThreshold + 0.36 + freedPerOther) {
+  const parallelThreshold = afterHoursShare + parallelShare;
+  if (roll < parallelThreshold) {
+    return 'PARALLEL_CIRCUIT';
+  }
+
+  // If heat is high (>55%), weight Cooling higher
+  const highHeatCoolingShare = 0.36 + freedPerOther - parallelReductionPerOther;
+  if (currentHeat > 55 && roll < parallelThreshold + highHeatCoolingShare) {
     return 'COOLING';
   }
 
-  const baseCoolingShare = (onLastLife ? 0.28 : 0.33) + freedPerOther;
-  const coolingThreshold = afterHoursThreshold + baseCoolingShare;
+  const baseCoolingShare = (onLastLife ? 0.28 : 0.33) + freedPerOther - parallelReductionPerOther;
+  const coolingThreshold =
+    parallelThreshold + (currentHeat > 55 ? highHeatCoolingShare : baseCoolingShare);
   if (roll < coolingThreshold) {
     return 'COOLING';
   }
 
-  const higherAmpShare = 0.30 + freedPerOther;
+  const higherAmpShare = 0.30 + freedPerOther - parallelReductionPerOther;
   if (roll < coolingThreshold + higherAmpShare) {
     return 'HIGHER_AMP';
   }
