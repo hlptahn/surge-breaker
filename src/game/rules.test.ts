@@ -292,6 +292,72 @@ test('QR code contact URLs and offline QR matrix match Victory and Game Over out
   }
 });
 
+test('QR matrix format information copies around top-left and top-right/bottom-left are identical and valid BCH(15,5) codewords for EC level L', () => {
+  const victoryUrl = getFusecoExpertContactUrl('victory');
+  const gameOverUrl = getFusecoExpertContactUrl('defeat');
+
+  // Compute all 8 valid 15-bit BCH(15,5) masked format codewords for EC Level L (0b01) and masks 0..7
+  const validFormatCodewordsForLevelL = new Map<number, number>();
+  for (let mask = 0; mask < 8; mask++) {
+    const data5 = (0b01 << 3) | mask;
+    let rem = data5 << 10;
+    for (let i = 14; i >= 10; i--) {
+      if ((rem >> i) & 1) {
+        rem ^= 0x537 << (i - 10);
+      }
+    }
+    const formatBits = ((data5 << 10) | rem) ^ 0x5412;
+    validFormatCodewordsForLevelL.set(formatBits, mask);
+  }
+
+  for (const url of [victoryUrl, gameOverUrl]) {
+    const grid = generateQrMatrix(url);
+    const size = grid.length;
+
+    // Read first copy (around top-left finder)
+    let copy1 = 0;
+    for (let i = 0; i <= 5; i++) {
+      if (grid[i][8]) copy1 |= 1 << i;
+    }
+    if (grid[7][8]) copy1 |= 1 << 6;
+    if (grid[8][8]) copy1 |= 1 << 7;
+    if (grid[8][7]) copy1 |= 1 << 8;
+    for (let i = 9; i < 15; i++) {
+      if (grid[8][14 - i]) copy1 |= 1 << i;
+    }
+
+    // Read second copy (top-right and bottom-left)
+    let copy2 = 0;
+    for (let i = 0; i < 8; i++) {
+      if (grid[8][size - 1 - i]) copy2 |= 1 << i;
+    }
+    for (let i = 8; i < 15; i++) {
+      if (grid[size - 15 + i][8]) copy2 |= 1 << i;
+    }
+
+    assert.equal(copy1, copy2, `Both 15-bit format info copies must be identical for ${url}`);
+    assert.ok(
+      validFormatCodewordsForLevelL.has(copy1),
+      `15-bit format value 0x${copy1.toString(16)} must be a valid BCH(15,5) codeword for EC level L`
+    );
+
+    // Also verify unmasked BCH(15,5) polynomial division remainder is 0 and EC level is 0b01 with mask 0..7
+    const unmasked = copy1 ^ 0x5412;
+    const ecLevel = (unmasked >> 13) & 0x3;
+    const maskPattern = (unmasked >> 10) & 0x7;
+    assert.equal(ecLevel, 0b01);
+    assert.ok(maskPattern >= 0 && maskPattern <= 7);
+
+    let bchRem = unmasked;
+    for (let i = 14; i >= 10; i--) {
+      if ((bchRem >> i) & 1) {
+        bchRem ^= 0x537 << (i - 10);
+      }
+    }
+    assert.equal(bchRem, 0);
+  }
+});
+
 test('Starting ball speed scales cleanly by world and level', () => {
   const w1l1 = getStartingBallSpeed(1, 1);
   const w1l2 = getStartingBallSpeed(1, 2);

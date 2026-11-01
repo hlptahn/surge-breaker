@@ -382,11 +382,11 @@ export function generateQrMatrix(text: string): boolean[][] {
   const writeFormatInfo = (grid: boolean[][], maskPattern: number) => {
     const formatBits = computeFormatBits(0b01, maskPattern);
     // Top-left around finder
-    for (let i = 0; i <= 5; i++) grid[8][i] = ((formatBits >> i) & 1) !== 0;
-    grid[8][7] = ((formatBits >> 6) & 1) !== 0;
+    for (let i = 0; i <= 5; i++) grid[i][8] = ((formatBits >> i) & 1) !== 0;
+    grid[7][8] = ((formatBits >> 6) & 1) !== 0;
     grid[8][8] = ((formatBits >> 7) & 1) !== 0;
-    grid[7][8] = ((formatBits >> 8) & 1) !== 0;
-    for (let i = 9; i < 15; i++) grid[14 - i][8] = ((formatBits >> i) & 1) !== 0;
+    grid[8][7] = ((formatBits >> 8) & 1) !== 0;
+    for (let i = 9; i < 15; i++) grid[8][14 - i] = ((formatBits >> i) & 1) !== 0;
 
     // Top-right and bottom-left
     for (let i = 0; i < 8; i++) {
